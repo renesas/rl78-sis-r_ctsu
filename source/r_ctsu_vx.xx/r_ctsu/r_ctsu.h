@@ -180,9 +180,13 @@
  #define CTSUCALIB_DCOFF_Pos       (11UL)         /*!< DCOFF (Bit 11)                                        */
  #define CTSUCALIB_DCOFF_Msk       (0x800UL)      /*!< DCOFF (Bitfield-Mask: 0x01)                           */
 /* =======================================================  CTSUDBGR1  ======================================================= */
- #define CTSUCALIB_DACCARRY_Pos    (7UL)          /*!< DACCARRY (Bit 25)                                     */
+ #define CTSUCALIB_DACMSEL_Pos     (8UL)          /*!< DACMSEL (Bit 24)                                      */
+ #define CTSUCALIB_DACMSEL_Msk     (0x100UL)      /*!< DACMSEL (Bitfield-Mask: 0x01)                         */
+ #define CTSUCALIB_DACCARRY_Pos    (9UL)          /*!< DACCARRY (Bit 25)                                     */
  #define CTSUCALIB_DACCARRY_Msk    (0x200UL)      /*!< DACCARRY (Bitfield-Mask: 0x01)                        */
- #define CTSUCALIB_SUCARRY_Pos     (9UL)          /*!< SUCARRY (Bit 27)                                      */
+ #define CTSUCALIB_SUMSEL_Pos      (26UL)         /*!< SUMSEL (Bit 26)                                       */
+ #define CTSUCALIB_SUMSEL_Msk      (0x400UL)  /*!< SUMSEL (Bitfield-Mask: 0x01)                              */
+ #define CTSUCALIB_SUCARRY_Pos     (11UL)         /*!< SUCARRY (Bit 27)                                      */
  #define CTSUCALIB_SUCARRY_Msk     (0x800UL)      /*!< SUCARRY (Bitfield-Mask: 0x01)                         */
  #define CTSUCALIB_DACCLK_Pos      (12UL)         /*!< DACCLK (Bit 28)                                       */
  #define CTSUCALIB_DACCLK_Msk      (0x1000UL)     /*!< DACCLK (Bitfield-Mask: 0x01)                          */
@@ -190,6 +194,8 @@
  #define CTSUCALIB_CCOCLK_Msk      (0x2000UL)     /*!< CCOCLK (Bitfield-Mask: 0x01)                          */
  #define CTSUCALIB_CCOCALIB_Pos    (14UL)         /*!< CCOCALIB (Bit 30)                                     */
  #define CTSUCALIB_CCOCALIB_Msk    (0x4000UL)     /*!< CCOCALIB (Bitfield-Mask: 0x01)                        */
+ #define CTSUCALIB_TXREV_Pos       (15UL)         /*!< TXREV (Bit 31)                                        */
+ #define CTSUCALIB_TXREV_Msk       (0x8000UL) /*!< TXREV (Bitfield-Mask: 0x01)                               */
 /* ======================================================  CTSUSUCLK0  ======================================================= */
  #define CTSUSUCLKA_SUADJ0_Pos      (0UL)          /*!< SUADJ0 (Bit 0)                                        */
  #define CTSUSUCLKA_SUADJ0_Msk      (0xffUL)       /*!< SUADJ0 (Bitfield-Mask: 0xff)                          */
@@ -450,6 +456,7 @@ fsp_err_t R_CTSU_SpecificDataGet(ctsu_ctrl_t * const       p_ctrl,
                                  uint16_t                * p_specific_data,
                                  ctsu_specific_data_type_t specific_data_type);
 fsp_err_t R_CTSU_DataInsert(ctsu_ctrl_t * const p_ctrl, uint16_t * p_insert_data);
+fsp_err_t R_CTSU_OffsetTuning(ctsu_ctrl_t * const p_ctrl);
 
 #endif                                 // R_CTSU_H
 

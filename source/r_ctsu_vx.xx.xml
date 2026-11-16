@@ -47,8 +47,8 @@
     <package>
         <type>RL78</type>
         <name>r_ctsu</name>
-        <version>1.11</version>
-        <zipsource>r_ctsu_v1.11.zip</zipsource>
+        <version>1.20</version>
+        <zipsource>r_ctsu_v1.20.zip</zipsource>
         <dependency>
             <module>r_bsp</module>
             <version>1.13</version>
