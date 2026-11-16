@@ -1,4 +1,4 @@
-/**********************************************************************************************************************
+/***********************************************************************************************************************
 * DISCLAIMER
 * This software is supplied by Renesas Electronics Corporation and is only intended for use with Renesas products. No
 * other uses are authorized. This software is owned by Renesas Electronics Corporation and is protected under all
@@ -14,7 +14,7 @@
 * following link:
 * http://www.renesas.com/disclaimer
 * Copyright (C) 2021 Renesas Electronics Corporation. All rights reserved.
-*********************************************************************************************************************/
+************************************************************************************************************************/
 
 /*******************************************************************************************************************//**
  * @ingroup RENESAS_INTERFACES
@@ -42,38 +42,52 @@
 /**********************************************************************************************************************
  * Macro definitions
  **********************************************************************************************************************/
-#define CTSU_COUNT_MAX            (0xFFFF) ///< Value of Maximum count
+#define CTSU_COUNT_MAX                      (0xFFFF)
+
+#define CTSU_TARGET_VALUE_CONFIG_SUPPORT    (1)
 
 #define CTSU_SUCCESS FSP_SUCCESS
+
+#ifndef FSP_ERR_CTSU_SCANNING
+ #define FSP_ERR_CTSU_SCANNING               (fsp_err_t)(6000)  ///< Scanning.
+#endif
+#ifndef FSP_ERR_CTSU_NOT_GET_DATA
+ #define FSP_ERR_CTSU_NOT_GET_DATA           (fsp_err_t)(6001)  ///< Not processed previous scan data.
+#endif
+#ifndef FSP_ERR_CTSU_INCOMPLETE_TUNING
+ #define FSP_ERR_CTSU_INCOMPLETE_TUNING      (fsp_err_t)(6002)  ///< Incomplete initial offset tuning.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_NOT_YET
+ #define FSP_ERR_CTSU_DIAG_NOT_YET           (fsp_err_t)(6003)  ///< Diagnosis of data collected no yet.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_OUTPUT_VOLTAGE
+ #define FSP_ERR_CTSU_DIAG_OUTPUT_VOLTAGE    (fsp_err_t)(6009)  ///< Diagnosis of LDO output voltage failed.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_OVER_VOLTAGE
+ #define FSP_ERR_CTSU_DIAG_OVER_VOLTAGE      (fsp_err_t)(6010)  ///< Diagnosis of over voltage detection circuit failed.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_OVER_CURRENT
+ #define FSP_ERR_CTSU_DIAG_OVER_CURRENT      (fsp_err_t)(6011)  ///< Diagnosis of over current detection circuit failed.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_LOAD_RESISTANCE
+ #define FSP_ERR_CTSU_DIAG_LOAD_RESISTANCE   (fsp_err_t)(6012)  ///< Diagnosis of LDO internal resistance value failed.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_CURRENT_SOURCE
+ #define FSP_ERR_CTSU_DIAG_CURRENT_SOURCE    (fsp_err_t)(6013)  ///< Diagnosis of LDO internal resistance value failed.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_SENSCLK_GAIN
+ #define FSP_ERR_CTSU_DIAG_SENSCLK_GAIN      (fsp_err_t)(6014)  ///< Diagnosis of SENSCLK frequency gain failed.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_SUCLK_GAIN
+ #define FSP_ERR_CTSU_DIAG_SUCLK_GAIN        (fsp_err_t)(6015)  ///< Diagnosis of SUCLK frequency gain failed.
+#endif
+#ifndef FSP_ERR_CTSU_DIAG_CLOCK_RECOVERY
+ #define FSP_ERR_CTSU_DIAG_CLOCK_RECOVERY    (fsp_err_t)(6016)  ///< Diagnosis of SUCLK clock recovery function failed.
+#endif
 
 /**********************************************************************************************************************
  * Typedef definitions
  **********************************************************************************************************************/
-
-/* Return error codes */
-typedef enum e_fsp_err
-{
-    FSP_SUCCESS,
-    FSP_ERR_ASSERTION,         ///< A critical assertion has failed
-	FSP_ERR_INVALID_POINTER,   ///< Pointer points to invalid memory location
-    FSP_ERR_INVALID_ARGUMENT,  ///< Invalid input parameter
-    FSP_ERR_NOT_OPEN,          ///< Requested channel is not configured or API not open
-    FSP_ERR_ALREADY_OPEN,      ///< Requested channel is already open in a different configuration
-    FSP_ERR_NOT_ENABLED,       ///< Requested operation is not enabled
-    FSP_ERR_INVALID_STATE,     ///< API or command not valid in the current state
-    FSP_ERR_CTSU_SCANNING,          ///< Scanning.
-    FSP_ERR_CTSU_NOT_GET_DATA,      ///< Not processed previous scan data.
-    FSP_ERR_CTSU_INCOMPLETE_TUNING, ///< Incomplete initial offset tuning.
-    FSP_ERR_CTSU_DIAG_NOT_YET,          ///< Diagnosis of data collected no yet.
-    FSP_ERR_CTSU_DIAG_OUTPUT_VOLTAGE,   ///< Diagnosis of LDO output voltage failed.
-    FSP_ERR_CTSU_DIAG_OVER_VOLTAGE,     ///< Diagnosis of over voltage detection circuit failed.
-    FSP_ERR_CTSU_DIAG_OVER_CURRENT,     ///< Diagnosis of over current detection circuit failed.
-    FSP_ERR_CTSU_DIAG_LOAD_RESISTANCE,  ///< Diagnosis of LDO internal resistance value failed.
-    FSP_ERR_CTSU_DIAG_CURRENT_SOURCE,   ///< Diagnosis of LDO internal resistance value failed.
-    FSP_ERR_CTSU_DIAG_SENSCLK_GAIN,     ///< Diagnosis of SENSCLK frequency gain failed.
-    FSP_ERR_CTSU_DIAG_SUCLK_GAIN,       ///< Diagnosis of SUCLK frequency gain failed.
-    FSP_ERR_CTSU_DIAG_CLOCK_RECOVERY,   ///< Diagnosis of SUCLK clock recovery function failed.
-} fsp_err_t;
 
 typedef fsp_err_t ctsu_err_t;
 
@@ -121,6 +135,7 @@ typedef enum e_ctsu_mode
 {
     CTSU_MODE_SELF_MULTI_SCAN  = 1,    ///< Self-capacitance multi scan mode
     CTSU_MODE_MUTUAL_FULL_SCAN = 3,    ///< Mutual capacitance full scan mode
+    CTSU_MODE_MUTUAL_CFC_SCAN  = 7,    ///< Mutual capacitance cfc scan mode (CTSU2 Only)
     CTSU_MODE_CURRENT_SCAN     = 9,    ///< Current scan mode (CTSU2 Only)
     CTSU_MODE_CORRECTION_SCAN  = 17,   ///< Correction scan mode (CTSU2 Only)
     CTSU_MODE_DIAGNOSIS_SCAN   = 33    ///< Diagnosis scan mode
@@ -131,9 +146,17 @@ typedef enum e_ctsu_posel
 {
     CTSU_POSEL_LOW_GPIO,               ///< Output low through GPIO
     CTSU_POSEL_HI_Z,                   ///< Hi-Z
-    CTSU_POSEL_LOW,                    ///< Output low through the power setting by the TXVSEL[1:0] bits
+    CTSU_POSEL_LOW,                    ///< Setting prohibited
     CTSU_POSEL_SAME_PULSE              ///< Same phase pulse output as transmission channel through the power setting by the TXVSEL[1:0] bits
 } ctsu_posel_t;
+
+/** CTSU select data type for slect data get */
+typedef enum e_ctsu_specific_data_type
+{
+    CTSU_SPECIFIC_RAW_DATA,
+    CTSU_SPECIFIC_CORRECTION_DATA,
+    CTSU_SPECIFIC_SELECTED_FREQ,
+} ctsu_specific_data_type_t;
 
 /** Callback function parameter data */
 typedef struct st_ctsu_callback_args
@@ -181,10 +204,11 @@ typedef struct st_ctsu_cfg
     uint8_t                    num_tx;                  ///< Number of transmit terminals
     uint16_t                   num_moving_average;      ///< Number of moving average for measurement data
     uint8_t                    tunning_enable;          ///< Initial offset tuning flag
-    uint8_t                    judge_multifreq_disable; ///< Disable to judge multi frequency
     void (* p_callback)(ctsu_callback_args_t * p_args); ///< Callback provided when CTSUFN ISR occurs.
     void const * p_context;                             ///< User defined context passed into callback function.
     void const * p_extend;                              ///< Pointer to extended configuration by instance of interface.
+    uint16_t     tuning_self_target_value;              ///< Target self value for initial offset tuning
+    uint16_t     tuning_mutual_target_value;            ///< Target mutual value for initial offset tuning
 } ctsu_cfg_t;
 
 /** Functions implemented at the HAL layer will follow this API. */
@@ -216,7 +240,7 @@ typedef struct st_ctsu_api
      */
     fsp_err_t (* dataGet)(ctsu_ctrl_t * const p_ctrl, uint16_t * p_data);
 
-    /** Scan stop.
+    /** ScanStop.
      * @par Implemented as
      * - @ref R_CTSU_ScanStop()
      *
@@ -264,6 +288,26 @@ typedef struct st_ctsu_api
      * @param[in]  p_ctrl       Pointer to control structure.
      */
     fsp_err_t (* close)(ctsu_ctrl_t * const p_ctrl);
+
+    /** Specific Data get.
+     * @par Implemented as
+     * - @ref R_CTSU_SpecificDataGet()
+     *
+     * @param[in]  p_ctrl              Pointer to control structure.
+     * @param[out] p_specific_data     Pointer to get specific data array.
+     * @param[in]  specific_data_type  Specific data type
+     */
+    fsp_err_t (* specificDataGet)(ctsu_ctrl_t * const p_ctrl, uint16_t * p_specific_data,
+                                  ctsu_specific_data_type_t specific_data_type);
+
+    /** Data Insert.
+     * @par Implemented as
+     * - @ref R_CTSU_DataInsert()
+     *
+     * @param[in]  p_ctrl              Pointer to control structure.
+     * @param[in]  p_insert_data       Pointer to insert data.
+     */
+    fsp_err_t (* dataInsert)(ctsu_ctrl_t * const p_ctrl, uint16_t * p_insert_data);
 } ctsu_api_t;
 
 /** This structure encompasses everything that is needed to use an instance of this interface. */
