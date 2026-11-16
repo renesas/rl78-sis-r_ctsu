@@ -144,6 +144,21 @@ To use DTC for read/write register handling, set this to 1. DTC will reduce CPU 
 			<description>Set 1 if you want to coexist with the settings in Smart Configurator, such as when using DTC with other modules. Assign CTSUWR to DTCD22 and CTSURD to DTCD23. The transfer mode is normal mode, and the transfer data size is 16 bits. Other settings are rewritten in the CTSU driver, so no settings are required.
 It is convenient to set 0 if DTC is used only by the CTSU driver. DTC settings are made in the CTSU driver and DTC transfer is performed. CTSUWR uses DTCD22 and CTSURD uses DTCD23. The start address of the DTC control data is 0x0FFD00.</description>
 		</property>
+		<property id="CTSU_CFG_SMS_SUPPORT_ENABLE" display="Auto-judgment function in Snooze mode using SMS" default="0" type="combobox">
+			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.0" display="Disable" value="0"/>
+			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.1" display="Enable" value="1"/>
+			<description>Enables the code for the auto-judgment feature in Snooze mode using SMS.</description>
+		</property>
+		<property id="CTSU_CFG_SMS_TRANSFER_ADDRESS" display="Data storage address setting for CTSURD" default="0xFF800" type="textbox">
+            <constraint display="When SMS is enabled" actionOnFail="disable">${CTSU_CFG_SMS_SUPPORT_ENABLE} == ${CTSU_CFG_SMS_SUPPORT_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_SMS_TRANSFER_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSURD. This data use 544 bytes from this address.</description>
+		</property>
+		<property id="CTSU_CFG_SMS_CTSUWR_ADDRESS" display="Data storage address setting for CTSUWR" default="0xFFB00" type="textbox">
+            <constraint display="When SMS is enabled" actionOnFail="disable">${CTSU_CFG_SMS_SUPPORT_ENABLE} == ${CTSU_CFG_SMS_SUPPORT_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_SMS_CTSUWR_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUWR. This data use (4 * element_num * multi_freq_num) bytes from this address.</description>
+		</property>
 		<property id="CTSU_CFG_INTCTSUWR_PRIORITY_LEVEL" display="Interrupt level for INTCTSUWR" default="2" type="combobox">
 			<option id="CTSU_CFG_INTCTSUWR_PRIORITY_LEVEL.0" display="Level 0(highest)" value="0"/>
 			<option id="CTSU_CFG_INTCTSUWR_PRIORITY_LEVEL.1" display="Level 1" value="1"/>

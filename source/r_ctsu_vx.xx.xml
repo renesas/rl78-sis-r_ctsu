@@ -47,8 +47,8 @@
     <package>
         <type>RL78</type>
         <name>r_ctsu</name>
-        <version>1.00</version>
-        <zipsource>r_ctsu_v1.00.zip</zipsource>
+        <version>1.10</version>
+        <zipsource>r_ctsu_v1.10.zip</zipsource>
         <dependency>
             <module>r_bsp</module>
             <version>1.00</version>
@@ -59,6 +59,7 @@
         <function>CapTouch</function>
         <incdir>r_config</incdir>
         <incdir>r_ctsu</incdir>
+        <incdir>../../HardwareDebug/src/smc_gen/r_ctsu</incdir>
     </package>
 
 </refinfo>

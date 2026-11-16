@@ -42,9 +42,6 @@
 /**********************************************************************************************************************
  * Macro definitions
  **********************************************************************************************************************/
-#define CTSU_API_VERSION_MAJOR    (1U)
-#define CTSU_API_VERSION_MINOR    (0U)
-
 #define CTSU_COUNT_MAX            (0xFFFF) ///< Value of Maximum count
 
 #define CTSU_SUCCESS FSP_SUCCESS
@@ -58,6 +55,7 @@ typedef enum e_fsp_err
 {
     FSP_SUCCESS,
     FSP_ERR_ASSERTION,         ///< A critical assertion has failed
+	FSP_ERR_INVALID_POINTER,   ///< Pointer points to invalid memory location
     FSP_ERR_INVALID_ARGUMENT,  ///< Invalid input parameter
     FSP_ERR_NOT_OPEN,          ///< Requested channel is not configured or API not open
     FSP_ERR_ALREADY_OPEN,      ///< Requested channel is already open in a different configuration
@@ -66,26 +64,18 @@ typedef enum e_fsp_err
     FSP_ERR_CTSU_SCANNING,          ///< Scanning.
     FSP_ERR_CTSU_NOT_GET_DATA,      ///< Not processed previous scan data.
     FSP_ERR_CTSU_INCOMPLETE_TUNING, ///< Incomplete initial offset tuning.
+    FSP_ERR_CTSU_DIAG_NOT_YET,          ///< Diagnosis of data collected no yet.
+    FSP_ERR_CTSU_DIAG_OUTPUT_VOLTAGE,   ///< Diagnosis of LDO output voltage failed.
+    FSP_ERR_CTSU_DIAG_OVER_VOLTAGE,     ///< Diagnosis of over voltage detection circuit failed.
+    FSP_ERR_CTSU_DIAG_OVER_CURRENT,     ///< Diagnosis of over current detection circuit failed.
+    FSP_ERR_CTSU_DIAG_LOAD_RESISTANCE,  ///< Diagnosis of LDO internal resistance value failed.
+    FSP_ERR_CTSU_DIAG_CURRENT_SOURCE,   ///< Diagnosis of LDO internal resistance value failed.
+    FSP_ERR_CTSU_DIAG_SENSCLK_GAIN,     ///< Diagnosis of SENSCLK frequency gain failed.
+    FSP_ERR_CTSU_DIAG_SUCLK_GAIN,       ///< Diagnosis of SUCLK frequency gain failed.
+    FSP_ERR_CTSU_DIAG_CLOCK_RECOVERY,   ///< Diagnosis of SUCLK clock recovery function failed.
 } fsp_err_t;
 
 typedef fsp_err_t ctsu_err_t;
-
-typedef union st_fsp_version
-{
-    /** Version id */
-    uint32_t version_id;
-
-    /** Code version parameters */
-    struct
-    {
-        uint8_t code_version_minor;    ///< Code minor version
-        uint8_t code_version_major;    ///< Code major version
-        uint8_t api_version_minor;     ///< API minor version
-        uint8_t api_version_major;     ///< API major version
-    };
-} fsp_version_t;
-
-typedef fsp_version_t ctsu_version_t;
 
 /** CTSU Events for callback function */
 typedef enum e_ctsu_event
@@ -132,7 +122,8 @@ typedef enum e_ctsu_mode
     CTSU_MODE_SELF_MULTI_SCAN  = 1,    ///< Self-capacitance multi scan mode
     CTSU_MODE_MUTUAL_FULL_SCAN = 3,    ///< Mutual capacitance full scan mode
     CTSU_MODE_CURRENT_SCAN     = 9,    ///< Current scan mode (CTSU2 Only)
-    CTSU_MODE_CORRECTION_SCAN  = 17    ///< Correction scan mode (CTSU2 Only)
+    CTSU_MODE_CORRECTION_SCAN  = 17,   ///< Correction scan mode (CTSU2 Only)
+    CTSU_MODE_DIAGNOSIS_SCAN   = 33    ///< Diagnosis scan mode
 } ctsu_md_t;
 
 /** CTSU Non-Measured Channel Output Select (CTSU2 Only) */
@@ -225,6 +216,22 @@ typedef struct st_ctsu_api
      */
     fsp_err_t (* dataGet)(ctsu_ctrl_t * const p_ctrl, uint16_t * p_data);
 
+    /** Scan stop.
+     * @par Implemented as
+     * - @ref R_CTSU_ScanStop()
+     *
+     * @param[in]  p_ctrl       Pointer to control structure.
+     */
+    fsp_err_t (* scanStop)(ctsu_ctrl_t * const p_ctrl);
+
+    /** Diagnosis.
+     * @par Implemented as
+     * - @ref R_CTSU_Diagnosis()
+     *
+     * @param[in]  p_ctrl       Pointer to control structure.
+     */
+    fsp_err_t (* diagnosis)(ctsu_ctrl_t * const p_ctrl);
+
     /** Specify callback function and optional context pointer and working memory pointer.
      * @par Implemented as
      * - @ref R_CTSU_CallbackSet()
@@ -238,6 +245,18 @@ typedef struct st_ctsu_api
     fsp_err_t (* callbackSet)(ctsu_ctrl_t * const p_api_ctrl, void (* p_callback)(ctsu_callback_args_t *),
                               void const * const p_context, ctsu_callback_args_t * const p_callback_memory);
 
+    /** SMS set.
+     * @par Implemented as
+     * - @ref R_CTSU_SmsSet()
+     *
+     * @param[in]  p_ctrl       Pointer to control structure.
+     * @param[in]  p_threshold  Pointer to threshold array.
+     * @param[in]  p_hysteresis Pointer to hysteresis array.
+     * @param[in]  count_filter Value of ON/OFF count filter.
+     */
+    fsp_err_t (* smsSet)(ctsu_ctrl_t * const p_ctrl, uint16_t * p_threshold,
+                         uint16_t * p_hysteresis, uint16_t count_filter);
+
     /** Close driver.
      * @par Implemented as
      * - @ref R_CTSU_Close()
@@ -245,15 +264,6 @@ typedef struct st_ctsu_api
      * @param[in]  p_ctrl       Pointer to control structure.
      */
     fsp_err_t (* close)(ctsu_ctrl_t * const p_ctrl);
-
-    /* DEPRECATED Return the version of the driver.
-     * @par Implemented as
-     * - @ref R_CTSU_VersionGet()
-     *
-     * @param[in]  p_ctrl       Pointer to control structure.
-     * @param[out] p_data       Memory address to return version information to.
-     */
-    fsp_err_t (* versionGet)(fsp_version_t * const p_data);
 } ctsu_api_t;
 
 /** This structure encompasses everything that is needed to use an instance of this interface. */
