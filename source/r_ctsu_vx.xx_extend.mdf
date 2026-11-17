@@ -149,12 +149,12 @@ It is convenient to set 0 if DTC is used only by the CTSU driver. DTC settings a
 			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.1" display="Enable" value="1"/>
 			<description>Enables the code for the auto-judgment feature in Snooze mode using SMS.</description>
 		</property>
-		<property id="CTSU_CFG_SMS_TRANSFER_ADDRESS" display="Data storage address setting for CTSURD" default="0xFF800" type="textbox">
+		<property id="CTSU_CFG_SMS_TRANSFER_ADDRESS" display="Data storage address setting for CTSURD" default="0xFF500" type="textbox">
             <constraint display="When SMS is enabled" actionOnFail="disable">${CTSU_CFG_SMS_SUPPORT_ENABLE} == ${CTSU_CFG_SMS_SUPPORT_ENABLE.1}</constraint>
             <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_SMS_TRANSFER_ADDRESS} &amp; 0xFF))</constraint>
 			<description>Data storage address setting for CTSURD. This data use 544 bytes from this address.</description>
 		</property>
-		<property id="CTSU_CFG_SMS_CTSUWR_ADDRESS" display="Data storage address setting for CTSUWR" default="0xFFB00" type="textbox">
+		<property id="CTSU_CFG_SMS_CTSUWR_ADDRESS" display="Data storage address setting for CTSUWR" default="0xFF800" type="textbox">
             <constraint display="When SMS is enabled" actionOnFail="disable">${CTSU_CFG_SMS_SUPPORT_ENABLE} == ${CTSU_CFG_SMS_SUPPORT_ENABLE.1}</constraint>
             <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_SMS_CTSUWR_ADDRESS} &amp; 0xFF))</constraint>
 			<description>Data storage address setting for CTSUWR. This data use (4 * element_num * multi_freq_num) bytes from this address.</description>
@@ -180,5 +180,49 @@ It is convenient to set 0 if DTC is used only by the CTSU driver. DTC settings a
 			<option id="CTSU_CFG_INTCTSUFN_PRIORITY_LEVEL.3" display="Level 3(Lowest)" value="3"/>
 			<description>This defines the interrupt priority level for INTCTSUFN</description>
 		</property>
+        <property id="CTSU_CFG_SMS_EXTRIGGER_PORT" display="Output port number for external trigger" default="P14" type="combobox">
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.0" display="PORT0" value="P0"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.1" display="PORT1" value="P1"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.2" display="PORT2" value="P2"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.3" display="PORT3" value="P3"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.4" display="PORT4" value="P4"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.5" display="PORT5" value="P5"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.6" display="PORT6" value="P6"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.7" display="PORT7" value="P7"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.12" display="PORT12" value="P12"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.13" display="PORT13" value="P13"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_PORT.14" display="PORT14" value="P14"/>
+            <constraint display="When SMS is enabled" actionOnFail="disable">${CTSU_CFG_SMS_SUPPORT_ENABLE} == ${CTSU_CFG_SMS_SUPPORT_ENABLE.1}</constraint>
+            <constraint display="This feature is used only in RL78/G22" actionOnFail="disable">("${Device.group}" == "RL78G22")</constraint>
+            <description>Output port of external trigger that invokes SMS</description>
+        </property>
+        <property id="CTSU_CFG_SMS_EXTRIGGER_BIT" display="Bit number for exrernal trigger output" default="1" type="combobox">
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.0" display="BIT0" value="1"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.1" display="BIT1" value="2"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.2" display="BIT2" value="4"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.3" display="BIT3" value="8"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.4" display="BIT4" value="16"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.5" display="BIT5" value="32"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.6" display="BIT6" value="64"/>
+            <option id="CTSU_CFG_SMS_EXTRIGGER_BIT.7" display="BIT7" value="128"/>
+            <constraint display="When SMS is enabled" actionOnFail="disable">${CTSU_CFG_SMS_SUPPORT_ENABLE} == ${CTSU_CFG_SMS_SUPPORT_ENABLE.1}</constraint>
+            <constraint display="This feature is used only in RL78/G22" actionOnFail="disable">("${Device.group}" == "RL78G22")</constraint>
+            <description>Bit to which the external trigger is connected</description>
+        </property>
+        <property id="CTSU_CFG_SMS_ELC_INTP" display="Interrupt port number for external trigger" default="1" type="combobox">
+            <option id="CTSU_CFG_SMS_ELC_INTP.0" display="INTP0" value="0"/>
+            <option id="CTSU_CFG_SMS_ELC_INTP.1" display="INTP1" value="1"/>
+            <option id="CTSU_CFG_SMS_ELC_INTP.2" display="INTP2" value="2"/>
+            <option id="CTSU_CFG_SMS_ELC_INTP.3" display="INTP3" value="3"/>
+            <option id="CTSU_CFG_SMS_ELC_INTP.4" display="INTP4" value="4"/>
+            <option id="CTSU_CFG_SMS_ELC_INTP.5" display="INTP5" value="5"/>
+            <option id="CTSU_CFG_SMS_ELC_INTP.6" display="INTP6" value="6"/>
+            <constraint display="When SMS is enabled" actionOnFail="disable">${CTSU_CFG_SMS_SUPPORT_ENABLE} == ${CTSU_CFG_SMS_SUPPORT_ENABLE.1}</constraint>
+            <constraint display="This feature is used only in RL78/G22" actionOnFail="disable">("${Device.group}" == "RL78G22")</constraint>
+            <description>Select the interrupt request port number. The interrupt port must be enabled in INTC component.
+Available only when using SMS on RL78/G22.</description>
+                <!-- RL78/G22 SMS setting only.</description> -->
+        </property>
 	</configuration>
 </module>
+

@@ -41,16 +41,24 @@
 #define CTSU_CFG_SMS_SUPPORT_ENABLE         (0)
 
 /* Data storage address setting for CTSURD. Set the lower 8 bits to 00H. */
-#define CTSU_CFG_SMS_TRANSFER_ADDRESS       0xFF800
+#define CTSU_CFG_SMS_TRANSFER_ADDRESS       0xFF500
 
 /* Data storage address setting for CTSUWR. Set the lower 8 bits to 00H. */
-#define CTSU_CFG_SMS_CTSUWR_ADDRESS         0xFFB00
+#define CTSU_CFG_SMS_CTSUWR_ADDRESS         0xFF800
 
 /* Interrupt priority level */
 #define CTSU_CFG_INTCTSUWR_PRIORITY_LEVEL   (2)
 #define CTSU_CFG_INTCTSURD_PRIORITY_LEVEL   (2)
 #define CTSU_CFG_INTCTSUFN_PRIORITY_LEVEL   (2)
 
+/* Output port number for external trigger.  */
+#define CTSU_CFG_SMS_EXTRIGGER_PORT         P14
+
+/* Bit number for external trigger output. */
+#define CTSU_CFG_SMS_EXTRIGGER_BIT          (1)
+
+/* INTP port setting */
+#define CTSU_CFG_SMS_ELC_INTP               (1)
 
 /* The following configurations are set according to the touch interface configuration, 
  * so they are not set in Smart Configurator.

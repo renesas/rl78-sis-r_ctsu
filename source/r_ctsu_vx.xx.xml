@@ -38,8 +38,9 @@
     <!-- only one target entry allowed; multiple sub tags permitted -->
     <target>
         <family>RL78</family>
-	    <series>RL78G2x</series>
+        <series>RL78G2x</series>
         <group>RL78G23</group>
+        <group>RL78G22</group>
     </target>
 
     <!-- only one package entry allowed -->
@@ -47,11 +48,11 @@
     <package>
         <type>RL78</type>
         <name>r_ctsu</name>
-        <version>1.20</version>
-        <zipsource>r_ctsu_v1.20.zip</zipsource>
+        <version>1.30</version>
+        <zipsource>r_ctsu_v1.30.zip</zipsource>
         <dependency>
             <module>r_bsp</module>
-            <version>1.13</version>
+            <version>1.40</version>
         </dependency>
         <application>CapTouch</application>
         <desc>Capacitive Sensing Unit driver.</desc>

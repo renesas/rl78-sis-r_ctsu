@@ -189,6 +189,9 @@ typedef struct st_ctsu_cfg
     ctsu_atune12_t             atune12;                 ///< CTSU Power Supply Capacity Adjustment (CTSU2 Only)
     ctsu_md_t                  md;                      ///< CTSU Measurement Mode Select
     ctsu_posel_t               posel;                   ///< CTSU Non-Measured Channel Output Select (CTSU2 Only)
+    uint8_t                    tsod;                    ///< TS all terminal output control for multi electrode scan
+    uint8_t                    mec_ts;                  ///< TS number used when using the MEC function
+    uint8_t                    mec_shield_ts;           ///< TS number of active shield used when using MEC function
     uint8_t                    ctsuchac0;               ///< TS00-TS07 enable mask
     uint8_t                    ctsuchac1;               ///< TS08-TS15 enable mask
     uint8_t                    ctsuchac2;               ///< TS16-TS23 enable mask
