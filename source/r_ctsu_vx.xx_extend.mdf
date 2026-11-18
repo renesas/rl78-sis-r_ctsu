@@ -133,18 +133,21 @@
 Setting to 1 includes parameter checking; 0 compiles out parameter checking</description>
 		</property>
 		<property id="CTSU_CFG_DTC_SUPPORT_ENABLE" display="Data transfer of INTCTSUWR and INTCTSURD" default="0" type="combobox">
+            <constraint display="This feature is not available on RL78G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
 			<option id="CTSU_CFG_DTC_SUPPORT_ENABLE.0" display="Interrupt handler" value="0"/>
-			<option id="CTSU_CFG_DTC_SUPPORT_ENABLE.1" display="DTC" value="1"/>
+            <option id="CTSU_CFG_DTC_SUPPORT_ENABLE.1" display="DTC" value="1"/>
 			<description>For standard interrupt handling, set this to 0.
 To use DTC for read/write register handling, set this to 1. DTC will reduce CPU usage compared to normal interrupts when many TS are being used.</description>
 		</property>
-		<property id="CTSU_CFG_DTC_USE_SC" display="DTC setting" default="0" type="combobox">
+        <property id="CTSU_CFG_DTC_USE_SC" display="DTC setting " default="0" type="combobox">
+            <constraint display="This feature is not available on RL78G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
 			<option id="CTSU_CFG_DTC_USE_SC.0" display="Setting in r_ctsu" value="0"/>
 			<option id="CTSU_CFG_DTC_USE_SC.1" display="Setting in DTC with Smart Configurator" value="1"/>
 			<description>Set 1 if you want to coexist with the settings in Smart Configurator, such as when using DTC with other modules. Assign CTSUWR to DTCD22 and CTSURD to DTCD23. The transfer mode is normal mode, and the transfer data size is 16 bits. Other settings are rewritten in the CTSU driver, so no settings are required.
 It is convenient to set 0 if DTC is used only by the CTSU driver. DTC settings are made in the CTSU driver and DTC transfer is performed. CTSUWR uses DTCD22 and CTSURD uses DTCD23. The start address of the DTC control data is 0x0FFD00.</description>
 		</property>
 		<property id="CTSU_CFG_SMS_SUPPORT_ENABLE" display="Auto-judgment function in Snooze mode using SMS" default="0" type="combobox">
+            <constraint display="This feature is not available on RL78G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
 			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.0" display="Disable" value="0"/>
 			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.1" display="Enable" value="1"/>
 			<description>Enables the code for the auto-judgment feature in Snooze mode using SMS.</description>
