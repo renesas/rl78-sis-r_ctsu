@@ -49,6 +49,37 @@
 /* Data storage address setting for CTSUWR. Set the lower 8 bits to 00H. */
 #define CTSU_CFG_SMS_CTSUWR_ADDRESS         0xFF800
 
+/* Data storage address setting for CTSUWR. Set the lower 8 bits to 00H. */
+#define CTSU_CFG_CTSUWR_ADDRESS             0xFF400
+
+/* Variable address setting for g_ctsu_self_raw. Set the lower 8 bits to 00H. */
+#define CTSU_CFG_SELF_RAW_ADDRESS           0xFF500
+
+/* Variable address setting for g_ctsu_mutual_raw. Set the lower 8 bits to 00H. */
+#define CTSU_CFG_MUTUAL_RAW_ADDRESS         0xFF600
+
+/* Data starage address setting for CTSUAJTHR. Set the lower 8 bit to 00H. */
+#define CTSU_CFG_AJTHR_ADDRESS              0xFF700
+
+/* Data starage address setting for CTSUAJMMAR. Set the lower 8 bit to 00H. */
+#define CTSU_CFG_AJMMAR_ADDRESS             0xFF800
+
+/* Data starage address setting for CTSUAJBLACT. Set the lower 8 bit to 00H. */
+#define CTSU_CFG_AJBLACT_ADDRESS            0xFF900
+
+/* Data starage address setting for CTSUAJBLAR. Set the lower 8 bit to 00H. */
+#define CTSU_CFG_AJBLAR_ADDRESS             0xFFA00
+
+/* Data starage address setting for CTSUAJRR. Set the lower 8 bit to 00H. */
+#define CTSU_CFG_AJRR_ADDRESS               0xFFB00
+
+/* Data starage address setting for CTSUMCACT1. Set the lower 8 bit to 00H. */
+#define CTSU_CFG_MCACT1_ADDRESS             0xFFC00
+
+/* Data starage address setting for CTSUMCACT2. Set the lower 8 bit to 00H. */
+#define CTSU_CFG_MCACT2_ADDRESS             0xFFD00
+
+
 /* Interrupt priority level */
 #define CTSU_CFG_INTCTSUWR_PRIORITY_LEVEL   (2)
 #define CTSU_CFG_INTCTSURD_PRIORITY_LEVEL   (2)
@@ -71,27 +102,41 @@
 #ifndef QE_TOUCH_CONFIGURATION
 #define CTSU_CFG_NUM_SELF_ELEMENTS          (1)
 #define CTSU_CFG_NUM_MUTUAL_ELEMENTS        (0)
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+ #define CTSU_CFG_MAJORITY_MODE                       (2)
+ #define CTSU_CFG_NUM_AUTOJUDGE_SELF_ELEMENTS         (1)
+ #define CTSU_CFG_NUM_AUTOJUDGE_MUTUAL_ELEMENTS       (0)
+ #define CTSU_CFG_AUTO_CORRECTION_ENABLE              (1)
+ #else
+ #define CTSU_CFG_MAJORITY_MODE                       (1)
+ #define CTSU_CFG_NUM_AUTOJUDGE_SELF_ELEMENTS         (0)
+ #define CTSU_CFG_NUM_AUTOJUDGE_MUTUAL_ELEMENTS       (0)
+ #define CTSU_CFG_AUTO_CORRECTION_ENABLE              (0)
+ #endif
+#define CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE   (0)
+#define CTSU_CFG_MULTIPLE_ELECTRODE_CONNECTION_ENABLE (0)
 #define CTSU_CFG_LOW_VOLTAGE_MODE           (0)
 #define CTSU_CFG_PCLK_DIVISION              (0)
-#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23))
-#define CTSU_CFG_TSCAP_PORT                 (0x0300)
-#elif (defined(BSP_MCU_GROUP_RL78F25))
-#define CTSU_CFG_TSCAP_PORT                 (0x0102)
-#else
-#define CTSU_CFG_TSCAP_PORT                 (0x0002)
-#endif
+ #if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23))
+ #define CTSU_CFG_TSCAP_PORT                 (0x0300)
+ #elif (defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
+ #define CTSU_CFG_TSCAP_PORT                 (0x0102)
+ #else
+ #define CTSU_CFG_TSCAP_PORT                 (0x0002)
+ #define CTSU_CFG_DIAG_DAC_TS                (0)
+ #endif
 #define CTSU_CFG_VCC_MV                     (5000)
 #define CTSU_CFG_NUM_SUMULTI                (3)
 
-#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23))
-#define CTSU_CFG_SUMULTI0                   (0x2F)
-#define CTSU_CFG_SUMULTI1                   (0x28)
-#define CTSU_CFG_SUMULTI2                   (0x36)
-#else
-#define CTSU_CFG_SUMULTI0                   (0x3F)
-#define CTSU_CFG_SUMULTI1                   (0x36)
-#define CTSU_CFG_SUMULTI2                   (0x48)
-#endif
+ #if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23))
+ #define CTSU_CFG_SUMULTI0                   (0x2F)
+ #define CTSU_CFG_SUMULTI1                   (0x28)
+ #define CTSU_CFG_SUMULTI2                   (0x36)
+ #else
+ #define CTSU_CFG_SUMULTI0                   (0x3F)
+ #define CTSU_CFG_SUMULTI1                   (0x36)
+ #define CTSU_CFG_SUMULTI2                   (0x48)
+ #endif
 
 #define CTSU_CFG_TEMP_CORRECTION_SUPPORT    (0)
 #define CTSU_CFG_TEMP_CORRECTION_TS         (0)
@@ -160,7 +205,7 @@
 #define CTSU_CFG_DIAG_DAC_LDIFF                   (91)
 #endif
 
-#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23) || defined(BSP_MCU_GROUP_RL78F25))
+#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23) || defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
   #define CTSU_DIAG_TSCAP_RANGE_LOW                (1050)
   #define CTSU_DIAG_TSCAP_RANGE_HIGH               (1419)
 

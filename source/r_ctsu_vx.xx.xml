@@ -40,6 +40,7 @@
         <family>RL78</family>
         <series>RL78F2x</series>
         <group>RL78F25</group>
+        <group>RL78F22</group>
         <series>RL78G2x</series>
         <group>RL78G23</group>
         <group>RL78G22</group>
@@ -52,8 +53,8 @@
     <package>
         <type>RL78</type>
         <name>r_ctsu</name>
-        <version>2.00</version>
-        <zipsource>r_ctsu_v2.00.zip</zipsource>
+        <version>2.10</version>
+        <zipsource>r_ctsu_v2.10.zip</zipsource>
         <dependency>
             <module>r_bsp</module>
             <version>1.70</version>

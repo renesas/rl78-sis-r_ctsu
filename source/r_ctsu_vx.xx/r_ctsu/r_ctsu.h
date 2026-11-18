@@ -50,10 +50,10 @@
 /***********************************************************************************************************************
  * Macro definitions
  **********************************************************************************************************************/
-#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23) || defined(BSP_MCU_GROUP_RL78F25))
-#define BSP_FEATURE_CTSU_VERSION                  (2)  ///< CTSU IP version
-#else
+#if (defined(BSP_MCU_GROUP_RL78G16))
 #define BSP_FEATURE_CTSU_VERSION                  (1)  ///< CTSU IP version
+#else
+#define BSP_FEATURE_CTSU_VERSION                  (2)  ///< CTSU IP version
 #endif
 
 #if  (defined(BSP_MCU_GROUP_RL78G16))
@@ -64,10 +64,13 @@
 /* For parts with CTSUCHAC2/3/4 and CTSUTRC2/3/4 registers (more than 16 TS pins) */
 #if (BSP_FEATURE_CTSU_VERSION == 2)
  #if (defined(BSP_MCU_GROUP_RL78F25))
-  #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (4)
+  #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (4)     /* TS00 - TS31 */
   #define BSP_FEATURE_CTSU_CTSUCHTRC_REGISTER_COUNT (4)
+ #elif (defined(BSP_MCU_GROUP_RL78F22))
+  #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (2)     /* TS00 - TS15 */
+  #define BSP_FEATURE_CTSU_CTSUCHTRC_REGISTER_COUNT (2)
  #else
-  #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (5)
+  #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (5)     /* TS00 - TS39 */
   #define BSP_FEATURE_CTSU_CTSUCHTRC_REGISTER_COUNT (5)
  #endif
 #endif
@@ -420,6 +423,12 @@ typedef struct st_ctsu_self_buf
 } ctsu_self_buf_t;
 #endif
 
+typedef struct st_ctsu_data
+{
+    uint16_t decimal_point_data;
+    uint16_t int_data;
+} ctsu_data_t;
+
 /** Scan buffer data formats (Mutual) */
 #if (BSP_FEATURE_CTSU_VERSION == 2)
 typedef uint16_t ctsu_mutual_buf_t;
@@ -433,18 +442,13 @@ typedef struct st_ctsu_mutual_buf
 } ctsu_mutual_buf_t;
 #endif
 
-typedef struct st_ctsu_data
-{
-    uint16_t decimal_point_data;
-    uint16_t int_data;
-} ctsu_data_t;
-
 /** Correction information */
 typedef struct st_ctsu_correction_info
 {
     ctsu_correction_status_t status;                               ///< Correction status
     ctsu_ctsuwr_t            ctsuwr;                               ///< Correction scan parameter
     volatile ctsu_self_buf_t scanbuf;                              ///< Correction scan buffer
+    uint8_t calculation_error;                                     ///< Overflow or underflow in correction calclation
 #if (BSP_FEATURE_CTSU_VERSION == 2)
  #if (CTSU_CFG_TEMP_CORRECTION_SUPPORT == 1)
     uint16_t scan_index;                                           ///< Scan point index
@@ -455,8 +459,12 @@ typedef struct st_ctsu_correction_info
     uint16_t base_value[CTSU_RANGE_NUM];                           ///< Value of internal registance measurement
     uint16_t error_rate[CTSU_RANGE_NUM];                           ///< Error rate of base vs DAC
     uint16_t range_ratio[CTSU_RANGE_NUM - 1];                      ///< Ratio between 160uA range and other ranges
-    uint16_t dac_value[CTSU_CORRECTION_POINT_NUM];                 ///< Value of internal DAC measurement
-    uint16_t ref_value[CTSU_RANGE_NUM][CTSU_CORRECTION_POINT_NUM]; ///< Value of reference
+    uint16_t dac_value[CTSU_RANGE_NUM][CTSU_CORRECTION_POINT_NUM]; ///< Value of internal DAC measurement with VDC path correction
+    uint16_t coef[CTSU_RANGE_NUM][CTSU_CORRECTION_POINT_NUM];      ///< Correction coefficients
+ #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
+    uint16_t dac_value_edge[CTSU_RANGE_NUM][2];                    ///< Both edge DAC values for SMS
+    uint16_t coef_edge[CTSU_RANGE_NUM][2];                         ///< Both edge coefficients for SMS 
+ #endif
 #else
     uint16_t first_val;                                            ///< 1st correction value
     uint16_t second_val;                                           ///< 2nd correction value
@@ -541,17 +549,6 @@ typedef struct st_ctsu_diag_info
     uint32_t      chacb;                                                                        ///< Diagnosis CHACB
 } ctsu_diag_info_t;
  #endif
-
- #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
-typedef struct st_ctsu_auto_judge
-{
-    uint32_t ajthr;      ///< Automatic judgement Threshold
-    uint32_t ajmmar;     ///< Automatic judgement Measurement moving average result
-    uint32_t ajblact;    ///< Automatic judgement Baseline average calculation
-    uint32_t ajblar;     ///< Automatic judgement Baseline average results
-    uint32_t ajrr;       ///< Automatic judgement Result
-} ctsu_auto_judge_t;
- #endif
 #endif
 
 /** CTSU private control block. DO NOT MODIFY. Initialization occurs when R_CTSU_Open() is called. */
@@ -576,10 +573,13 @@ typedef struct st_ctsu_instance_ctrl
     ctsu_ctsuwr_t          * p_ctsuwr;           ///< CTSUWR write register value. g_ctsu_ctsuwr[] is set by Open API.
     ctsu_self_buf_t        * p_self_raw;         ///< Pointer to Self raw data. g_ctsu_self_raw[] is set by Open API.
     uint16_t               * p_self_corr;        ///< Pointer to Self correction data. g_ctsu_self_corr[] is set by Open API.
+    uint16_t               * p_self_mfc;         ///< Pointer to Self multi frequency correction data. g_ctsu_self_mfc[] is set by Open API.
     ctsu_data_t            * p_self_data;        ///< Pointer to Self moving average data. g_ctsu_self_data[] is set by Open API.
     ctsu_mutual_buf_t      * p_mutual_raw;       ///< Pointer to Mutual raw data. g_ctsu_mutual_raw[] is set by Open API.
     uint16_t               * p_mutual_pri_corr;  ///< Pointer to Mutual primary correction data. g_ctsu_mutual_pri_corr[] is set by Open API.
     uint16_t               * p_mutual_snd_corr;  ///< Pointer to Mutual secondary correction data. g_ctsu_mutual_snd_corr[] is set by Open API.
+    uint16_t               * p_mutual_pri_mfc;   ///< Pointer to Mutual primary multi frequency correction data. g_ctsu_pri_mutual_mfc[] is set by Open API.
+    uint16_t               * p_mutual_snd_mfc;   ///< Pointer to Mutual primary multi frequency correction data. g_ctsu_pri_mutual_mfc[] is set by Open API.
     ctsu_data_t            * p_mutual_pri_data;  ///< Pointer to Mutual primary moving average data. g_ctsu_mutual_pri_data[] is set by Open API.
     ctsu_data_t            * p_mutual_snd_data;  ///< Pointer to Mutual secondary moving average data. g_ctsu_mutual_snd_data[] is set by Open API.
     ctsu_correction_info_t * p_correction_info;  ///< Pointer to correction info
@@ -619,7 +619,11 @@ typedef struct st_ctsu_instance_ctrl
     ctsu_diag_info_t * p_diag_info;                ///< pointer to diagnosis info
  #endif
  #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
-    ctsu_auto_judge_t * p_auto_judge;              ///< Array of automatic judgement register write variables. g_ctsu_auto_judge[] is set by Open API.
+    uint32_t          * p_ajthr;                   ///< Array of automatic judgement register write variables. g_ctsu_ajthr[] is set by Open API.
+    uint32_t          * p_ajmmar;                  ///< Array of automatic judgement register write variables. g_ctsu_ajmmar[] is set by Open API.
+    uint32_t          * p_ajblact;                 ///< Array of automatic judgement register write variables. g_ctsu_ajblact[] is set by Open API.
+    uint32_t          * p_ajblar;                  ///< Array of automatic judgement register write variables. g_ctsu_ajblar[] is set by Open API.
+    uint32_t          * p_ajrr;                    ///< Array of automatic judgement register write variables. g_ctsu_ajrr[] is set by Open API.
     uint8_t             blini_flag;                ///< Flags for controlling baseline initialization bit for automatic judgement
     uint8_t             ajmmat;                    ///< Copy from config by Open API for automatic judgement
     uint8_t             ajbmat;                    ///< Copy from config by Open  for automatic judgement

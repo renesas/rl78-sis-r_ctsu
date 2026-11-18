@@ -184,15 +184,68 @@ It is convenient to set 0 if DTC is used only by the CTSU driver. DTC settings a
             ||("${CTSU_CFG_AUTO_JUDGE_ENABLE}" == "0") &amp;&amp; ("${CTSU_CFG_DTC_SUPPORT_ENABLE}" == "0")
             ||("${CTSU_CFG_AUTO_JUDGE_ENABLE}" == "0") &amp;&amp; ("${CTSU_CFG_DTC_SUPPORT_ENABLE}" == "1")
             </constraint>
-            <constraint display="This feature is available on RL78/F25" actionOnFail="disable">("${Device.group}" == "RL78F25")</constraint>
+            <constraint display="This feature is not available on RL78/G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
+            <constraint display="This feature is not available on RL78/G22" actionOnFail="disable">("${Device.group}" != "RL78G22")</constraint>
+            <constraint display="This feature is not available on RL78/G23" actionOnFail="disable">("${Device.group}" != "RL78G23")</constraint>
             <description>Select enable / disable of auto judgement code.
             -Disable:Disable use the code for auto judgement.
             -Enable:Enable use the code for auto judgement.
             It is recommended to set auto judgement for each touch interface(configuration method) with QE of Capacitve Touch.</description>
 		</property>
+		<property id="CTSU_CFG_CTSUWR_ADDRESS" display="Data storage address setting for CTSUWR" default="0xFF300" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_CTSUWR_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUWR.</description>
+		</property>
+		<property id="CTSU_CFG_SELF_RAW_ADDRESS" display="Variable address setting for g_ctsu_self_raw." default="0xFF400" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_SELF_RAW_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Variable address setting for g_ctsu_self_raw.</description>
+		</property>
+		<property id="CTSU_CFG_MUTUAL_RAW_ADDRESS" display="Variable address setting for g_ctsu_mutual_raw" default="0xFF500" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_SELF_RAW_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Variable address setting for g_ctsu_mutual_raw.</description>
+		</property>
+		<property id="CTSU_CFG_AJTHR_ADDRESS" display="Data storage address setting for CTSUAJTHR." default="0xFF600" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_AJTHR_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUAJTHR.</description>
+		</property>
+		<property id="CTSU_CFG_AJMMAR_ADDRESS" display="Data storage address setting for CTSUAJMMAR." default="0xFF700" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_AJMMAR_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUAJMMAR.</description>
+		</property>
+		<property id="CTSU_CFG_AJBLACT_ADDRESS" display="Data storage address setting for CTSUAJBLACT." default="0xFF800" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_AJBLACT_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUAJBLACT.</description>
+		</property>
+		<property id="CTSU_CFG_AJBLAR_ADDRESS" display="Data storage address setting for CTSUAJBLAR." default="0xFF900" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_AJBLAR_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUAJBLAR.</description>
+		</property>
+		<property id="CTSU_CFG_AJRR_ADDRESS" display="Data storage address setting for CTSUAJRR." default="0xFFA00" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_AJRR_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUAJRR.</description>
+		</property>
+		<property id="CTSU_CFG_MCACT1_ADDRESS" display="Data storage address setting for CTSUMCACT1." default="0xFFB00" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_MCACT1_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUMCACT1.</description>
+		</property>
+		<property id="CTSU_CFG_MCACT2_ADDRESS" display="Data storage address setting for CTSUMCACT2." default="0xFFC00" type="textbox">
+            <constraint display="When auto judgement is enabled" actionOnFail="disable">${CTSU_CFG_AUTO_JUDGE_ENABLE} == ${CTSU_CFG_AUTO_JUDGE_ENABLE.1}</constraint>
+            <constraint display="Must set the lower 8bits to 00H.">(0x00 == (${CTSU_CFG_MCACT2_ADDRESS} &amp; 0xFF))</constraint>
+			<description>Data storage address setting for CTSUMCACT2.</description>
+		</property>
 		<property id="CTSU_CFG_SMS_SUPPORT_ENABLE" display="Auto-judgment function in Snooze mode using SMS" default="0" type="combobox">
             <constraint display="This feature is not available on RL78/G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
             <constraint display="This feature is not available on RL78/F25" actionOnFail="disable">("${Device.group}" != "RL78F25")</constraint>
+            <constraint display="This feature is not available on RL78/F22" actionOnFail="disable">("${Device.group}" != "RL78F22")</constraint>
 			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.0" display="Disable" value="0"/>
 			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.1" display="Enable" value="1"/>
 			<description>Enables the code for the auto-judgment feature in Snooze mode using SMS.</description>
