@@ -83,6 +83,7 @@
  #define CTSU_SUADJ_MAX                      (0xFF) // The maximum value of SUADJx
  #define CTSU_SUADJ_SSCNT_ADJ                (0x20) // The value of Adjusting SCADJx by SSCNT
  #define CTSU_MUTUAL_BUF_SIZE                (CTSU_CFG_NUM_SUMULTI * 2)
+ #define CTSU_SUMULTI_BASE                   (0x3F) // SUCLK base value (32MHz)
 
 /* Macro definitions for correction */
  #if (CTSU_CFG_LOW_VOLTAGE_MODE == 0)
@@ -140,7 +141,7 @@
 #define CTSU_SET_LOW(a)     (uint8_t) ((uint16_t) (a) & 0xFF);
 #define CTSU_SET_HI(a)      (uint8_t) (((uint16_t) (a) >> 8) & 0xFF);
 
-#define CTSU_NUM_ELEMENTS   (CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS)
+#define CTSU_NUM_ELEMENTS   (CTSU_CFG_SMS_ELEMENT_NUM)
 
 #define CTSU_CFG_SMS_NUM_ELEMENTS       (8)
 
@@ -1290,7 +1291,7 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
     CTSUDBGR0 |= CTSUCALIB_SUCLKEN_Msk;
     
     /* Read SUADJD byte */
-    suadj[0] = SUADJD;
+    suadj[0] = (uint16_t) ((SUADJD * (CTSU_CFG_SUMULTI0 + 1)) / (CTSU_SUMULTI_BASE + 1));
 #if (CTSU_CFG_NUM_SUMULTI >= 2)
     /* Adjust multi freq */
     suadj[1] = (uint16_t) ((suadj[0] * (CTSU_CFG_SUMULTI1 + 1)) / (CTSU_CFG_SUMULTI0 + 1));
@@ -4806,8 +4807,8 @@ void ctsu_sms_init (ctsu_instance_ctrl_t * const p_instance_ctrl,
 ***********************************************************************************************************************/
 void ctsu_sms_start(void)
 {
-    SMSEIF = 0U; /* clear INTSMSE interrupt flag */
-    SMSEMK = 0U; /* enable INTSMSE interrupt */
+    SMSEMK = 1U; /* disable INTSMSE interrupt */
+    SMSEIF = 1U; /* set INTSMSE interrupt flag */
     SMSSTART = 1U;
 }
 
@@ -4956,8 +4957,8 @@ void ctsu_sms_work_init (ctsu_instance_ctrl_t * const p_instance_ctrl, uint16_t 
 #endif
 
     /* Work RAM7 */
-    g_ctsu_sms_work[6].eb0 = 0x00;                                  /* Reserve */
-    g_ctsu_sms_work[6].eb1 = 0x00;                                  /* Reserve */
+    g_ctsu_sms_work[6].eb0 = CTSU_SET_LOW(&MK0H);                   /* MK0H Address pointer */
+    g_ctsu_sms_work[6].eb1 = CTSU_SET_HI(&MK0H);                    /* MK0H Address pointer */
     g_ctsu_sms_work[6].eb2 = 0x04;                                  /* immediate Value */
     g_ctsu_sms_work[6].eb3 = 0x00;                                  /* immediate Value */
     g_ctsu_sms_work[6].eb4 = CTSU_SET_LOW(&g_ctsu_sms_correction[CTSU_CORRECTION_POINT_NUM]);           /* CTSU Correction Table Data Address pointer */
@@ -5161,6 +5162,9 @@ void ctsu_sms_isr (void)
     ctsu_callback_args_t    args;
     uint16_t                element_id;
     ctsu_correction_multi_t multi;
+
+    SMSEMK = 1U;
+    SMSEIF = 1U;
 
     args.event = CTSU_EVENT_SCAN_COMPLETE;
 

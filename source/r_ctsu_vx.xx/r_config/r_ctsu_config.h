@@ -77,14 +77,23 @@
 #endif
 #define CTSU_CFG_VCC_MV                     (5000)
 #define CTSU_CFG_NUM_SUMULTI                (3)
+
+#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23))
+#define CTSU_CFG_SUMULTI0                   (0x2F)
+#define CTSU_CFG_SUMULTI1                   (0x28)
+#define CTSU_CFG_SUMULTI2                   (0x36)
+#else
 #define CTSU_CFG_SUMULTI0                   (0x3F)
 #define CTSU_CFG_SUMULTI1                   (0x37)
 #define CTSU_CFG_SUMULTI2                   (0x47)
+#endif
+
 #define CTSU_CFG_TEMP_CORRECTION_SUPPORT    (0)
 #define CTSU_CFG_TEMP_CORRECTION_TS         (0)
 #define CTSU_CFG_TEMP_CORRECTION_TIME       (0)
 #define CTSU_CFG_CALIB_RTRIM_SUPPORT        (0)
 #define CTSU_CFG_DIAG_SUPPORT_ENABLE        (0)
+#define CTSU_CFG_SMS_ELEMENT_NUM            (1)
 #endif
 
  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
