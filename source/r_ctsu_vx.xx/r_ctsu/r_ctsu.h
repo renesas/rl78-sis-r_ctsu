@@ -13,7 +13,7 @@
 * this software. By using this software, you agree to the additional terms and conditions found by accessing the
 * following link:
 * http://www.renesas.com/disclaimer
-* Copyright (C) 2021 Renesas Electronics Corporation. All rights reserved.
+* Copyright (C) 2024 Renesas Electronics Corporation. All rights reserved.
 ************************************************************************************************************************/
 
 /*******************************************************************************************************************//**
@@ -31,10 +31,26 @@
 #include "r_ctsu_config.h"
 #include "r_ctsu_api.h"
 
+#ifdef QE_TOUCH_CONFIGURATION
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+  #if (QE_TOUCH_VERSION < 0x0400)
+   #error "Error! For Autojudge measurement with CTSU SIS v2.00 or later, please use QE V4.0.0 or later."
+  #endif
+ #endif
+#endif
+
+#ifdef QE_TOUCH_CONFIGURATION
+ #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
+  #if (QE_TOUCH_VERSION < 0x0400)
+  #error "Error! For measurements using SMS with CTSU SIS v2.00 or later, please use QE V4.0.0 or later."
+  #endif
+ #endif
+#endif
+
 /***********************************************************************************************************************
  * Macro definitions
  **********************************************************************************************************************/
-#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23))
+#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23) || defined(BSP_MCU_GROUP_RL78F25))
 #define BSP_FEATURE_CTSU_VERSION                  (2)  ///< CTSU IP version
 #else
 #define BSP_FEATURE_CTSU_VERSION                  (1)  ///< CTSU IP version
@@ -47,8 +63,13 @@
 
 /* For parts with CTSUCHAC2/3/4 and CTSUTRC2/3/4 registers (more than 16 TS pins) */
 #if (BSP_FEATURE_CTSU_VERSION == 2)
-#define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (3)
-#define BSP_FEATURE_CTSU_CTSUCHTRC_REGISTER_COUNT (3)
+ #if (defined(BSP_MCU_GROUP_RL78F25))
+  #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (4)
+  #define BSP_FEATURE_CTSU_CTSUCHTRC_REGISTER_COUNT (4)
+ #else
+  #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (5)
+  #define BSP_FEATURE_CTSU_CTSUCHTRC_REGISTER_COUNT (5)
+ #endif
 #endif
 #if (BSP_FEATURE_CTSU_VERSION == 1)
 #define BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT  (2)
@@ -61,6 +82,25 @@
 
  #define CTSU_DIAG_HIGH_CURRENT_SOURCE    (16) ///< number of high current source table at Diagnosis
  #define CTSU_DIAG_LOW_CURRENT_SOURCE     (10) ///< number of low current source table at Diagnosis
+#endif
+
+#define CTSU_VALUE_MAJORITY_MODE         (0x01)
+#define CTSU_JUDGEMENT_MAJORITY_MODE     (0x02)
+
+#ifndef CTSU_CFG_MAJORITY_MODE
+ #define CTSU_CFG_MAJORITY_MODE           (CTSU_VALUE_MAJORITY_MODE)
+#endif
+#if (BSP_FEATURE_CTSU_VERSION == 2)
+ #if (CTSU_CFG_MAJORITY_MODE & CTSU_JUDGEMENT_MAJORITY_MODE)
+
+  #define CTSU_MAJORITY_MODE_ELEMENTS     (CTSU_CFG_NUM_SUMULTI)
+ #else
+  #define CTSU_MAJORITY_MODE_ELEMENTS     (1)
+ #endif
+#endif
+
+#if (BSP_FEATURE_CTSU_VERSION == 1)
+ #define CTSU_MAJORITY_MODE_ELEMENTS      (1)
 #endif
 
 #if (BSP_FEATURE_CTSU_VERSION == 1)
@@ -393,7 +433,7 @@ typedef struct st_ctsu_mutual_buf
 } ctsu_mutual_buf_t;
 #endif
 
-typedef struct ctsu_data
+typedef struct st_ctsu_data
 {
     uint16_t decimal_point_data;
     uint16_t int_data;
@@ -501,6 +541,17 @@ typedef struct st_ctsu_diag_info
     uint32_t      chacb;                                                                        ///< Diagnosis CHACB
 } ctsu_diag_info_t;
  #endif
+
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+typedef struct st_ctsu_auto_judge
+{
+    uint32_t ajthr;      ///< Automatic judgement Threshold
+    uint32_t ajmmar;     ///< Automatic judgement Measurement moving average result
+    uint32_t ajblact;    ///< Automatic judgement Baseline average calculation
+    uint32_t ajblar;     ///< Automatic judgement Baseline average results
+    uint32_t ajrr;       ///< Automatic judgement Result
+} ctsu_auto_judge_t;
+ #endif
 #endif
 
 /** CTSU private control block. DO NOT MODIFY. Initialization occurs when R_CTSU_Open() is called. */
@@ -567,6 +618,17 @@ typedef struct st_ctsu_instance_ctrl
  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
     ctsu_diag_info_t * p_diag_info;                ///< pointer to diagnosis info
  #endif
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    ctsu_auto_judge_t * p_auto_judge;              ///< Array of automatic judgement register write variables. g_ctsu_auto_judge[] is set by Open API.
+    uint8_t             blini_flag;                ///< Flags for controlling baseline initialization bit for automatic judgement
+    uint8_t             ajmmat;                    ///< Copy from config by Open API for automatic judgement
+    uint8_t             ajbmat;                    ///< Copy from config by Open  for automatic judgement
+ #endif
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+    uint32_t          * p_mcact1;                  ///< Array of CTSUMCACT1 register write variables. g_ctsu_mcact1[] is set by Open API.
+    uint32_t          * p_mcact2;                  ///< Array of CTSUMCACT1 register write variables. g_ctsu_mcact1[] is set by Open API.
+    uint8_t             mcact_flag;                ///< Flag for multi clock auto correction
+ #endif
 #endif
     uint8_t                  sms;                ///< Whether or not SMS use.
     ctsu_cfg_t const * p_ctsu_cfg;                 ///< Pointer to initial configurations.
@@ -600,6 +662,7 @@ extern const ctsu_api_t g_ctsu_on_ctsu;
 fsp_err_t R_CTSU_Open(ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cfg);
 fsp_err_t R_CTSU_ScanStart(ctsu_ctrl_t * const p_ctrl);
 fsp_err_t R_CTSU_DataGet(ctsu_ctrl_t * const p_ctrl, uint16_t * p_data);
+fsp_err_t R_CTSU_AutoJudgementDataGet(ctsu_ctrl_t * const p_ctrl, uint64_t * p_button_status);
 fsp_err_t R_CTSU_ScanStop(ctsu_ctrl_t * const p_ctrl);
 fsp_err_t R_CTSU_CallbackSet(ctsu_ctrl_t * const          p_api_ctrl,
                              void (                     * p_callback)(ctsu_callback_args_t *),

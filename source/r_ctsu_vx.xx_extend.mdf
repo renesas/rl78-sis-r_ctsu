@@ -14,6 +14,36 @@
 			<pin name="TSCAP">
 				<pinConfiguration config="AUTO"/>
 			</pin>
+			<pin name="TS0">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS1">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS2">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS3">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS4">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS5">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS6">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS7">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS8">
+				<pinConfiguration config="AUTO"/>
+			</pin>
+			<pin name="TS9">
+				<pinConfiguration config="AUTO"/>
+			</pin>
 			<pin name="TS00">
 				<pinConfiguration config="AUTO"/>
 			</pin>
@@ -146,8 +176,23 @@ To use DTC for read/write register handling, set this to 1. DTC will reduce CPU 
 			<description>Set 1 if you want to coexist with the settings in Smart Configurator, such as when using DTC with other modules. Assign CTSUWR to DTCD22 and CTSURD to DTCD23. The transfer mode is normal mode, and the transfer data size is 16 bits. Other settings are rewritten in the CTSU driver, so no settings are required.
 It is convenient to set 0 if DTC is used only by the CTSU driver. DTC settings are made in the CTSU driver and DTC transfer is performed. CTSUWR uses DTCD22 and CTSURD uses DTCD23. The start address of the DTC control data is 0x0FFD00.</description>
 		</property>
+		<property id="CTSU_CFG_AUTO_JUDGE_ENABLE" display="Select auto judgement" default="0" type="combobox">
+            <option id="CTSU_CFG_AUTO_JUDGE_ENABLE.0" display="Disable" value="0"/>
+            <option id="CTSU_CFG_AUTO_JUDGE_ENABLE.1" display="Enable" value="1"/>
+            <constraint display="DTC must be enabled when auto judgement is enabled." actionOnFail="error">
+            ("${CTSU_CFG_AUTO_JUDGE_ENABLE}" == "1") &amp;&amp; ("${CTSU_CFG_DTC_SUPPORT_ENABLE}" == "1")
+            ||("${CTSU_CFG_AUTO_JUDGE_ENABLE}" == "0") &amp;&amp; ("${CTSU_CFG_DTC_SUPPORT_ENABLE}" == "0")
+            ||("${CTSU_CFG_AUTO_JUDGE_ENABLE}" == "0") &amp;&amp; ("${CTSU_CFG_DTC_SUPPORT_ENABLE}" == "1")
+            </constraint>
+            <constraint display="This feature is available on RL78/F25" actionOnFail="disable">("${Device.group}" == "RL78F25")</constraint>
+            <description>Select enable / disable of auto judgement code.
+            -Disable:Disable use the code for auto judgement.
+            -Enable:Enable use the code for auto judgement.
+            It is recommended to set auto judgement for each touch interface(configuration method) with QE of Capacitve Touch.</description>
+		</property>
 		<property id="CTSU_CFG_SMS_SUPPORT_ENABLE" display="Auto-judgment function in Snooze mode using SMS" default="0" type="combobox">
-            <constraint display="This feature is not available on RL78G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
+            <constraint display="This feature is not available on RL78/G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
+            <constraint display="This feature is not available on RL78/F25" actionOnFail="disable">("${Device.group}" != "RL78F25")</constraint>
 			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.0" display="Disable" value="0"/>
 			<option id="CTSU_CFG_SMS_SUPPORT_ENABLE.1" display="Enable" value="1"/>
 			<description>Enables the code for the auto-judgment feature in Snooze mode using SMS.</description>

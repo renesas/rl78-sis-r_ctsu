@@ -16,7 +16,7 @@
 * following link:
 * http://www.renesas.com/disclaimer
 *
-* Copyright (C) 2021 Renesas Electronics Corporation. All rights reserved.
+* Copyright (C) 2024 Renesas Electronics Corporation. All rights reserved.
 ***********************************************************************************************************************/
 -->
 <refinfo>
@@ -38,6 +38,8 @@
     <!-- only one target entry allowed; multiple sub tags permitted -->
     <target>
         <family>RL78</family>
+        <series>RL78F2x</series>
+        <group>RL78F25</group>
         <series>RL78G2x</series>
         <group>RL78G23</group>
         <group>RL78G22</group>
@@ -50,15 +52,15 @@
     <package>
         <type>RL78</type>
         <name>r_ctsu</name>
-        <version>1.50</version>
-        <zipsource>r_ctsu_v1.50.zip</zipsource>
+        <version>2.00</version>
+        <zipsource>r_ctsu_v2.00.zip</zipsource>
         <dependency>
             <module>r_bsp</module>
-            <version>1.62</version>
+            <version>1.70</version>
         </dependency>
         <application>CapTouch</application>
         <desc>Capacitive Sensing Unit driver.</desc>
-        <details>The CTSU2L module is a CTSU2L driver for the Capacitive Sensing Unit. The CTSU2L module is configured assuming access via the Touch middleware layer, but can also be accessed from the user application.</details>
+        <details>The CTSU module is a CTSU driver for the Capacitive Sensing Unit. The CTSU module is configured assuming access via the Touch middleware layer, but can also be accessed from the user application.</details>
         <function>CapTouch</function>
         <incdir>r_config</incdir>
         <incdir>r_ctsu</incdir>

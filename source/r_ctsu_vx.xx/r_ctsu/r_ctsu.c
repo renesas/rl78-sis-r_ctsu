@@ -13,7 +13,7 @@
 * this software. By using this software, you agree to the additional terms and conditions found by accessing the
 * following link:
 * http://www.renesas.com/disclaimer
-* Copyright (C) 2021 Renesas Electronics Corporation. All rights reserved.
+* Copyright (C) 2024 Renesas Electronics Corporation. All rights reserved.
 ************************************************************************************************************************/
 
 /***********************************************************************************************************************
@@ -249,7 +249,7 @@
   #define CTSU_DIAG_DELAY_MS            (5)      // delay time (ms)
   #define CTSU_DIAG_SUCLK0_REG1         (0xff00) // cco gain test SUCLK0
   #define CTSU_DIAG_SUCLK0_REG2         (0x20)   // cco gain test SUCLK0
-  #define CTSU_DIAG_STCLK_FREQ          (500UL)  // stclk freqency (Hz)
+  #define CTSU_DIAG_STCLK_FREQ          (500)    // stclk freqency (Hz)
   #define CTSU_DIAG_LVM_MASK            (0x400)  // LVmode mask
   #define CTSU_DIAG_CFC_SDPA_REG        (0x3F)   // cfc scan sdpa
   #define CTSU_DIAG_CHACA_TSMAX         (32)     // ts max chaca byte
@@ -264,6 +264,29 @@
   #define CTSU_DIAG_DAC_7BIT            (0x80)   // 0x80 for SO register
 
  #endif
+#endif
+
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+ #define CTSU_AUTO_JUDGE_BLOCK_SIZE     (5)  // Block size of automatic judgement register to be transferred by DTC
+ #define CTSU_AUTO_CTSUSO_BLOCK_SIZE    (1)  // Block size of CTSUSO register to be transferred by DTC for automatic judgement(same for CTSUSCNT register)
+ #define CTSU_AUTO_FINAL_JUDGE_BIT      (4)  // Definition for bit-shifting the final judgement bit of the automatic judgement result register
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+  #define CTSU_AUTO_MCACT_BLOCK_SIZE    (1)  // Block size of CTSUMCACT register to be transferred by DTC
+ #endif
+#endif
+
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+ #define CTSU_AUTO_DECIMAL_POINT_NUM    (12)   // Number of bits after the decimal point of the sensor conuter auto correction table register
+#endif
+
+#if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+ #define CTSU_MULTICLOCK_AUTO_CORRECTION_BASE_VALUE (7680U)
+#endif
+
+#if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+ #define CTSU_SERIAL_TUNING_ELEMENT     (1)  // To avoid reading outside the array in the case of mutual 1 x N configuration
+#else
+ #define CTSU_SERIAL_TUNING_ELEMENT     (0)  // No additional buffer required
 #endif
 
 #define CTSU_LWORD_SET(_lword, _upper, _lower)  \
@@ -376,9 +399,15 @@ typedef struct st_ctsu_diag_save_reg
     uint32_t ctsucra;
     uint32_t ctsucrb;
     uint32_t ctsuchaca;
+#if BSP_MCU_GROUP_RL78F25
+#else
     uint32_t ctsuchacb;
+#endif
     uint32_t ctsuchtrca;
+#if BSP_MCU_GROUP_RL78F25
+#else
     uint32_t ctsuchtrcb;
+#endif
     uint32_t ctsumch;
     uint32_t ctsucalib;
     uint32_t ctsusuclka;
@@ -404,6 +433,14 @@ typedef BSP_CMSE_NONSECURE_CALL void (*volatile ctsu_prv_ns_callback)(ctsu_callb
 static fsp_err_t ctsu_transfer_open(ctsu_instance_ctrl_t * const p_instance_ctrl);
 static fsp_err_t ctsu_transfer_close(ctsu_instance_ctrl_t * const p_instance_ctrl);
 static fsp_err_t ctsu_transfer_configure(ctsu_instance_ctrl_t * const p_instance_ctrl);
+static void ctsu_transfer_normal(ctsu_instance_ctrl_t * const p_instance_ctrl);
+static void ctsu_transfer_normal_ctsuwr(ctsu_instance_ctrl_t * const p_instance_ctrl);
+static void ctsu_transfer_normal_ctsurd(ctsu_instance_ctrl_t * const p_instance_ctrl);
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+static void ctsu_transfer_autojudge(ctsu_instance_ctrl_t * const p_instance_ctrl);
+static void ctsu_transfer_autojudge_ctsuwr(ctsu_instance_ctrl_t * const p_instance_ctrl);
+static void ctsu_transfer_autojudge_ctsurd(ctsu_instance_ctrl_t * const p_instance_ctrl);
+#endif
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
 static fsp_err_t ctsu_sms_transfer_configure (ctsu_instance_ctrl_t * const p_instance_ctrl);
 #endif
@@ -411,7 +448,6 @@ static fsp_err_t ctsu_sms_transfer_configure (ctsu_instance_ctrl_t * const p_ins
 #endif
 static void ctsu_initial_offset_tuning(ctsu_instance_ctrl_t * const p_instance_ctrl);
 static void ctsu_moving_average(ctsu_data_t * p_average, uint16_t new_data, uint16_t average_num);
-
 static void ctsu_end_interrupt(ctsu_instance_ctrl_t * const p_instance_ctrl);
 
 #if defined(__CCRL__)
@@ -429,15 +465,26 @@ void ctsu_end_isr(void) __attribute__ ((interrupt));
 #endif
 static void ctsu_correction_process(ctsu_instance_ctrl_t * const p_instance_ctrl);
 static void ctsu_correction_measurement(ctsu_instance_ctrl_t * const p_instance_ctrl, uint16_t * data);
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
 static void ctsu_correction_calc(uint16_t * correction_data, uint16_t raw_data, ctsu_correction_calc_t * p_calc);
+#endif
 static void ctsu_correction_exec(ctsu_instance_ctrl_t * const p_instance_ctrl);
+#if (BSP_FEATURE_CTSU_VERSION == 1)
+static void ctsu_correction_ctsu1_exec(ctsu_instance_ctrl_t * const p_instance_ctrl);
+#endif
+#if (BSP_FEATURE_CTSU_VERSION == 2)
+static void ctsu_correction_ctsu2_exec(ctsu_instance_ctrl_t * const p_instance_ctrl);
+#endif
 
 #if (BSP_FEATURE_CTSU_VERSION == 2)
-static void ctsu_correction_fleq(ctsu_correction_multi_t * p_multi, uint16_t * p_pri, uint16_t * p_snd);
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 0)
+static void ctsu_correction_freq(ctsu_correction_multi_t * p_multi, uint16_t * p_pri, uint16_t * p_snd);
+ #endif
 static void ctsu_correction_multi(ctsu_correction_multi_t * p_multi, uint16_t * p_pri, uint16_t * p_snd);
 #endif
 static void ctsu_delay(uint16_t delay_us);
 #if (BSP_FEATURE_CTSU_VERSION == 2)
+
  #if (CTSU_CFG_TEMP_CORRECTION_SUPPORT == 1)
 static void ctsu_correction_scan_start(void);
 static void ctsu_correction_data_get(ctsu_instance_ctrl_t * const p_instance_ctrl, uint16_t * p_data);
@@ -451,6 +498,18 @@ static void ctsu_correction_calib_rtrim(ctsu_instance_ctrl_t * const p_instance_
 static void ctsu_corrcfc_process(ctsu_instance_ctrl_t * const p_instance_ctrl);
 static void ctsu_corrcfc_measurement(ctsu_instance_ctrl_t * const p_instance_ctrl, uint16_t * data, uint8_t point_num);
 
+ #endif
+
+ #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+static void ctsu_auto_correction_register_set (ctsu_instance_ctrl_t * const p_instance_ctrl);
+ #endif
+
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+static void ctsu_auto_judge_threshold_calc (ctsu_instance_ctrl_t * const p_instance_ctrl);
+ #endif
+
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+static void ctsu_multiclock_auto_correction_register_set (ctsu_instance_ctrl_t * const p_instance_ctrl);
  #endif
 #endif
 
@@ -568,6 +627,12 @@ static fsp_err_t ctsu_diag_data_get2(uint16_t * p_data);
  #endif
 #endif
 
+#if (BSP_FEATURE_CTSU_VERSION == 2)
+ #if ((CTSU_CFG_TEMP_CORRECTION_SUPPORT == 1) && (CTSU_CFG_CALIB_RTRIM_SUPPORT == 1)) || (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
+static void      ctsu_adc_init(void);
+ #endif
+#endif
+
 /***********************************************************************************************************************
  * Private global variables
  **********************************************************************************************************************/
@@ -578,20 +643,42 @@ static uint8_t       g_ctsu_element_complete_flag[CTSU_CFG_NUM_SELF_ELEMENTS + C
 static uint8_t       g_ctsu_frequency_complete_flag[CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS];
 #endif
 static int32_t       g_ctsu_tuning_diff[CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS];
-static ctsu_ctsuwr_t g_ctsu_ctsuwr[(CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS) * CTSU_CFG_NUM_SUMULTI];
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+ #if defined(__CCRL__)
+#pragma address      g_ctsu_ctsuwr = 0x0FF400U
+ #elif defined(__ICCRL78__)
+#pragma location=0x0FF400U
+ #endif
+#endif
+static ctsu_ctsuwr_t g_ctsu_ctsuwr[(CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS +
+                                    CTSU_SERIAL_TUNING_ELEMENT) * CTSU_CFG_NUM_SUMULTI];
 #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
 static uint16_t        g_ctsu_self_element_index = 0;
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+ #if defined(__CCRL__)
+#pragma address        g_ctsu_self_raw = 0x0FF600U
+ #elif defined(__ICCRL78__)
+#pragma location=0x0FF600U
+ #endif
+#endif
 static ctsu_self_buf_t g_ctsu_self_raw[CTSU_CFG_NUM_SELF_ELEMENTS * CTSU_CFG_NUM_SUMULTI];
 static uint16_t        g_ctsu_self_corr[CTSU_CFG_NUM_SELF_ELEMENTS * CTSU_CFG_NUM_SUMULTI];
-static ctsu_data_t     g_ctsu_self_data[CTSU_CFG_NUM_SELF_ELEMENTS];
+static ctsu_data_t     g_ctsu_self_data[CTSU_CFG_NUM_SELF_ELEMENTS * CTSU_MAJORITY_MODE_ELEMENTS];
 #endif
 #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
 static uint16_t          g_ctsu_mutual_element_index = 0;
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+ #if defined(__CCRL__)
+#pragma address          g_ctsu_mutual_raw = 0x0FF700U
+ #elif defined(__ICCRL78__)
+#pragma location=0x0FF700U
+ #endif
+#endif
 static ctsu_mutual_buf_t g_ctsu_mutual_raw[CTSU_CFG_NUM_MUTUAL_ELEMENTS * CTSU_MUTUAL_BUF_SIZE];
 static uint16_t          g_ctsu_mutual_pri_corr[CTSU_CFG_NUM_MUTUAL_ELEMENTS * CTSU_CFG_NUM_SUMULTI];
 static uint16_t          g_ctsu_mutual_snd_corr[CTSU_CFG_NUM_MUTUAL_ELEMENTS * CTSU_CFG_NUM_SUMULTI];
-static ctsu_data_t       g_ctsu_mutual_pri_data[CTSU_CFG_NUM_MUTUAL_ELEMENTS];
-static ctsu_data_t       g_ctsu_mutual_snd_data[CTSU_CFG_NUM_MUTUAL_ELEMENTS];
+static ctsu_data_t       g_ctsu_mutual_pri_data[CTSU_CFG_NUM_MUTUAL_ELEMENTS * CTSU_MAJORITY_MODE_ELEMENTS];
+static ctsu_data_t       g_ctsu_mutual_snd_data[CTSU_CFG_NUM_MUTUAL_ELEMENTS * CTSU_MAJORITY_MODE_ELEMENTS];
 #endif
 static ctsu_correction_info_t g_ctsu_correction_info;
 
@@ -682,16 +769,38 @@ static ctsu_diag_info_t     g_ctsu_diag_info;
 static ctsu_diag_save_reg_t g_ctsu_diag_reg;
  #endif
 
- #if (BSP_FEATURE_CTSU_VERSION == 2)
-  #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+ #if defined(__CCRL__)
+#pragma address          g_ctsu_auto_judge = 0x0FF800U
+ #elif defined(__ICCRL78__)
+#pragma location=0x0FF800U
+ #endif
+static ctsu_auto_judge_t g_ctsu_auto_judge[(CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS) * CTSU_CFG_NUM_SUMULTI];
+ #endif
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+ #if defined(__CCRL__)
+#pragma address g_ctsu_mcact1 = 0x0FFB00U
+ #elif defined(__ICCRL78__)
+#pragma location=0x0FFB00U
+ #endif
+static uint32_t g_ctsu_mcact1[(CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS) * CTSU_CFG_NUM_SUMULTI];
+ #if defined(__CCRL__)
+#pragma address g_ctsu_mcact2 = 0x0FFC00U
+ #elif defined(__ICCRL78__)
+#pragma location=0x0FFC00U
+ #endif
+static uint32_t g_ctsu_mcact2[(CTSU_CFG_NUM_SELF_ELEMENTS + CTSU_CFG_NUM_MUTUAL_ELEMENTS) * CTSU_CFG_NUM_SUMULTI];
+ #endif
+
+ #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
 uint8_t g_ctsu_selected_freq_self[CTSU_CFG_NUM_SELF_ELEMENTS];
-  #endif
-  #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+ #endif
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
 uint8_t g_ctsu_selected_freq_mutual[CTSU_CFG_NUM_MUTUAL_ELEMENTS];
-  #endif
  #endif
 
 #endif
+
 
 #if (BSP_FEATURE_CTSU_VERSION == 1)
  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
@@ -806,6 +915,28 @@ uint8_t __near dtc_vectortable[40U];
 st_dtc_data __near dtc_controldata_21;
 #endif
 
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+#pragma address dtc_controldata_20 = 0x0FFDE0U
+st_dtc_data __near dtc_controldata_20;
+
+#pragma address dtc_controldata_21 = 0x0FFDE8U
+st_dtc_data __near dtc_controldata_21;
+#endif
+
+#if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+#pragma address dtc_controldata_18 = 0x0FFDD0U
+st_dtc_data __near dtc_controldata_18;
+
+#pragma address dtc_controldata_19 = 0x0FFDD8U
+st_dtc_data __near dtc_controldata_19;
+
+#pragma address dtc_controldata_20 = 0x0FFDE0U
+st_dtc_data __near dtc_controldata_20;
+
+#pragma address dtc_controldata_21 = 0x0FFDE8U
+st_dtc_data __near dtc_controldata_21;
+#endif
+
 #pragma address dtc_controldata_22 = 0x0FFDF0U
 st_dtc_data __near dtc_controldata_22;
 
@@ -840,6 +971,14 @@ uint8_t __near dtc_vectortable[40U];
 st_dtc_data __near dtc_controldata_21;
 #endif
 
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+#pragma location=0x0FFDE0U
+st_dtc_data __near dtc_controldata_20;
+
+#pragma location=0x0FFDE8U
+st_dtc_data __near dtc_controldata_21;
+#endif
+
 #pragma location=0x0FFDF0U
 st_dtc_data __near dtc_controldata_22;
 
@@ -860,6 +999,12 @@ st_dtc_data dtc_controldata_21 __attribute__ ((section (".dtc_controldata_21")))
 st_dtc_data dtc_controldata_21 __attribute__ ((section (".dtc_controldata_21")));
 st_dtc_data dtc_controldata_22 __attribute__ ((section (".dtc_controldata_22")));
 #else
+
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+st_dtc_data dtc_controldata_20 __attribute__ ((section (".dtc_controldata_20")));
+st_dtc_data dtc_controldata_21 __attribute__ ((section (".dtc_controldata_21")));
+#endif
+
 st_dtc_data dtc_controldata_22 __attribute__ ((section (".dtc_controldata_22")));
 st_dtc_data dtc_controldata_23 __attribute__ ((section (".dtc_controldata_23")));
 #endif
@@ -878,6 +1023,12 @@ extern st_dtc_data_t __near dtc_controldata_21;
 extern st_dtc_data_t __near dtc_controldata_21;
 extern st_dtc_data_t __near dtc_controldata_22;
 #else
+
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+extern st_dtc_data_t __near dtc_controldata_20;
+extern st_dtc_data_t __near dtc_controldata_21;
+#endif
+
 extern st_dtc_data_t __near dtc_controldata_22;
 extern st_dtc_data_t __near dtc_controldata_23;
 #endif
@@ -963,7 +1114,7 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
     {
         p_instance_ctrl->p_self_raw   = &g_ctsu_self_raw[g_ctsu_self_element_index * CTSU_CFG_NUM_SUMULTI];
         p_instance_ctrl->p_self_corr  = &g_ctsu_self_corr[g_ctsu_self_element_index * CTSU_CFG_NUM_SUMULTI];
-        p_instance_ctrl->p_self_data  = &g_ctsu_self_data[g_ctsu_self_element_index];
+        p_instance_ctrl->p_self_data  = &g_ctsu_self_data[g_ctsu_self_element_index * CTSU_MAJORITY_MODE_ELEMENTS];
         p_instance_ctrl->num_elements = p_cfg->num_rx;
  #if (BSP_FEATURE_CTSU_VERSION == 2)
         p_instance_ctrl->p_selected_freq_self = &g_ctsu_selected_freq_self[g_ctsu_self_element_index];
@@ -989,9 +1140,9 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
         p_instance_ctrl->p_mutual_snd_corr =
             &g_ctsu_mutual_snd_corr[g_ctsu_mutual_element_index * CTSU_CFG_NUM_SUMULTI];
         p_instance_ctrl->p_mutual_pri_data =
-            &g_ctsu_mutual_pri_data[g_ctsu_mutual_element_index];
+            &g_ctsu_mutual_pri_data[g_ctsu_mutual_element_index * CTSU_MAJORITY_MODE_ELEMENTS];
         p_instance_ctrl->p_mutual_snd_data =
-            &g_ctsu_mutual_snd_data[g_ctsu_mutual_element_index];
+            &g_ctsu_mutual_snd_data[g_ctsu_mutual_element_index * CTSU_MAJORITY_MODE_ELEMENTS];
         p_instance_ctrl->num_elements = (uint8_t) (p_cfg->num_rx * p_cfg->num_tx);
  #if (BSP_FEATURE_CTSU_VERSION == 2)
         p_instance_ctrl->p_selected_freq_mutual = &g_ctsu_selected_freq_mutual[g_ctsu_mutual_element_index * 2];
@@ -1006,13 +1157,26 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
  #endif
     }
 #endif
+
     p_instance_ctrl->p_element_complete_flag = &g_ctsu_element_complete_flag[g_ctsu_element_index];
 #if (BSP_FEATURE_CTSU_VERSION == 2)
     p_instance_ctrl->p_frequency_complete_flag = &g_ctsu_frequency_complete_flag[g_ctsu_element_index];
 #endif
-    p_instance_ctrl->p_tuning_diff   = &g_ctsu_tuning_diff[g_ctsu_element_index];
-    p_instance_ctrl->p_ctsuwr        = &g_ctsu_ctsuwr[g_ctsu_element_index * CTSU_CFG_NUM_SUMULTI];
-    g_ctsu_element_index             = (uint8_t) (g_ctsu_element_index + p_instance_ctrl->num_elements);
+    p_instance_ctrl->p_tuning_diff  = &g_ctsu_tuning_diff[g_ctsu_element_index];
+    p_instance_ctrl->p_ctsuwr       = &g_ctsu_ctsuwr[g_ctsu_element_index * CTSU_CFG_NUM_SUMULTI];
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    /* Secure DTC transfer area for automatic judgement */
+    p_instance_ctrl->p_auto_judge             = &g_ctsu_auto_judge[g_ctsu_element_index * CTSU_MAJORITY_MODE_ELEMENTS];
+    /* Copy to ctrl variable for setting change for automatic judgement */
+    p_instance_ctrl->ajmmat                   = p_cfg->ajmmat;
+    p_instance_ctrl->ajbmat                   = p_cfg->ajbmat;
+#endif
+#if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+    p_instance_ctrl->p_mcact1   = &g_ctsu_mcact1[g_ctsu_element_index * CTSU_CFG_NUM_SUMULTI];
+    p_instance_ctrl->p_mcact2   = &g_ctsu_mcact2[g_ctsu_element_index * CTSU_CFG_NUM_SUMULTI];
+    p_instance_ctrl->mcact_flag = 0;
+#endif
+    g_ctsu_element_index            = (uint8_t) (g_ctsu_element_index + p_instance_ctrl->num_elements);
     p_instance_ctrl->ctsu_elem_index = g_ctsu_element_index;
 
     /* Set Value */
@@ -1091,7 +1255,15 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
     else
     {
     }
+
+ #if (CTSU_CFG_MULTIPLE_ELECTRODE_CONNECTION_ENABLE == 1)
+    /* Copy the variables used for the MEC function to the ctrl instance */
+    p_instance_ctrl->tsod = p_instance_ctrl->p_ctsu_cfg->tsod;
+    p_instance_ctrl->mec_ts = p_instance_ctrl->p_ctsu_cfg->mec_ts;
+    p_instance_ctrl->mec_shield_ts = p_instance_ctrl->p_ctsu_cfg->mec_shield_ts;
+ #endif
 #endif
+
     for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
     {
         p_instance_ctrl->p_element_complete_flag[element_id] = 0;
@@ -1136,7 +1308,7 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
 #endif
 #if (BSP_FEATURE_CTSU_VERSION == 1)
         p_instance_ctrl->p_ctsuwr[element_id].ctsussc = (uint16_t) (element_cfgs->ssdiv << 8);
-        p_instance_ctrl->p_ctsuwr[element_id].ctsuso0 = (uint16_t) ((element_cfgs->snum << 10) | element_cfgs->so);
+        p_instance_ctrl->p_ctsuwr[element_id].ctsuso0 = (uint16_t) ((uint16_t)(element_cfgs->snum << 10) | element_cfgs->so);
         p_instance_ctrl->p_ctsuwr[element_id].ctsuso1 =
             (uint16_t) ((CTSU_ICOG_RECOMMEND << 13) | (element_cfgs->sdpa << 8) | CTSU_RICOA_RECOMMEND);
 #endif
@@ -1159,11 +1331,18 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
     if (p_instance_ctrl->num_elements == g_ctsu_element_index)
     {
         /* TSCAP discharge process */
-#if (CTSU_CFG_TSCAP_PORT == 0x0300)
-        P3_bit.no0 = 0;
-        PM3_bit.no0 = 0;
+#if (CTSU_CFG_TSCAP_PORT == 0x0102)
+        P1_bit.no2     = 0;
+        POM1_bit.no2   = 0;
         ctsu_delay(10);
-        PM3_bit.no0 = 1;
+        POM1_bit.no2   = 1;
+        TSPMC1_bit.no2 = 1;
+#endif
+#if (CTSU_CFG_TSCAP_PORT == 0x0300)
+        P3_bit.no0    = 0;
+        PM3_bit.no0   = 0;
+        ctsu_delay(10);
+        PM3_bit.no0   = 1;
         PMCT3_bit.no0 = 1;
 #endif
 #if (CTSU_CFG_TSCAP_PORT == 0x0002)
@@ -1199,17 +1378,17 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
         }
         else if ((CTSU_PCLKB_FREQ_RANGE1 < pclkb_mhz) && (CTSU_PCLKB_FREQ_RANGE2 >= pclkb_mhz))
         {
-            CTSUCRAH |= 1 << CTSUCRA_CLK_Pos;
+            CTSUCRAL |= 1 << CTSUCRA_CLK_Pos;
             CTSUCR3  = (uint8_t) ((pclkb_mhz >> 1) - 1);
         }
         else if ((CTSU_PCLKB_FREQ_RANGE2 < pclkb_mhz) && (CTSU_PCLKB_FREQ_RANGE3 >= pclkb_mhz))
         {
-            CTSUCRAH |= 2 << CTSUCRA_CLK_Pos;
+            CTSUCRAL |= 2 << CTSUCRA_CLK_Pos;
             CTSUCR3  = (uint8_t) ((pclkb_mhz >> 2) - 1);
         }
         else
         {
-            CTSUCRAH |= 3 << CTSUCRA_CLK_Pos;
+            CTSUCRAL |= 3 << CTSUCRA_CLK_Pos;
             CTSUCR3  = (uint8_t) ((pclkb_mhz >> 3) - 1);
         }
 #endif
@@ -1319,6 +1498,16 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
     CTSUSUCLK2 = (uint16_t) (CTSU_CFG_SUMULTI2 << 8) | suadj[2];
 #endif
     CTSUCRAH  |= CTSUCRA_SDPSEL_Msk;
+
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+    {
+        /* Fixed parameter setting for automatic judgement */
+        CTSUAJCRL = (p_instance_ctrl->p_ctsu_cfg->thot << 8U) | p_instance_ctrl->p_ctsu_cfg->tlot;
+
+        p_instance_ctrl->blini_flag = 1;
+    }
+ #endif
 #endif
 
 #if (BSP_FEATURE_CTSU_VERSION == 1)
@@ -1510,6 +1699,38 @@ fsp_err_t R_CTSU_ScanStart (ctsu_ctrl_t * const p_ctrl)
 
     gp_ctsu_isr_context = p_instance_ctrl;
 
+#if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+    if (((1 == p_instance_ctrl->p_ctsu_cfg->ajfen) && (1 == p_instance_ctrl->p_ctsu_cfg->majirimd)) ||
+        ((0 == p_instance_ctrl->p_ctsu_cfg->ajfen) && (0 == p_instance_ctrl->p_ctsu_cfg->majority_mode)))
+    {
+        if (0 == p_instance_ctrl->mcact_flag)
+        {
+            if (CTSU_TUNING_COMPLETE == p_instance_ctrl->tuning)
+            {
+                ctsu_multiclock_auto_correction_register_set(p_instance_ctrl);
+                p_instance_ctrl->mcact_flag = 1;
+                CTSUOPTL |= 0x0002U;    /* MCACFEN = 1 */
+                CTSUOPTL = (CTSUOPTL & ~0x0004U) | (p_instance_ctrl->p_ctsu_cfg->majirimd << 2);
+            }
+            else
+            {
+                CTSUOPTL &= ~0x0004U;    /* MAJIRIMD = 0 */
+                CTSUOPTL &= ~0x0002U;    /* MCACFEN = 0 */
+            }
+        }
+        else
+        {
+            CTSUOPTL |= 0x0002U;    /* MCACFEN = 1 */
+            CTSUOPTL = (CTSUOPTL & ~0x0004U) | (p_instance_ctrl->p_ctsu_cfg->majirimd << 2);
+        }
+    }
+    else
+    {
+        CTSUOPTL &= ~0x0004U;    /* MAJIRIMD = 0 */
+        CTSUOPTL &= ~0x0002U;    /* MCACFEN = 0 */
+    }
+#endif
+
 #if (CTSU_CFG_DTC_SUPPORT_ENABLE == 1)
  #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
     if (1 == p_instance_ctrl->sms)
@@ -1579,14 +1800,27 @@ fsp_err_t R_CTSU_ScanStart (ctsu_ctrl_t * const p_ctrl)
         /* Write Channel setting */
         CTSUCHAC0  = p_instance_ctrl->ctsuchac0;
         CTSUCHAC1  = p_instance_ctrl->ctsuchac1;
+ #if (BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT >= 3)
         CTSUCHAC2  = p_instance_ctrl->ctsuchac2;
+ #endif
+ #if (BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT >= 4)
         CTSUCHAC3  = p_instance_ctrl->ctsuchac3;
+ #endif
+ #if (BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT >= 5)
         CTSUCHAC4  = p_instance_ctrl->ctsuchac4;
+ #endif
+
         CTSUCHTRC0 = p_instance_ctrl->ctsuchtrc0;
         CTSUCHTRC1 = p_instance_ctrl->ctsuchtrc1;
+ #if (BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT >= 3)
         CTSUCHTRC2 = p_instance_ctrl->ctsuchtrc2;
+ #endif
+ #if (BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT >= 4)
         CTSUCHTRC3 = p_instance_ctrl->ctsuchtrc3;
+ #endif
+ #if (BSP_FEATURE_CTSU_CTSUCHAC_REGISTER_COUNT >= 5)
         CTSUCHTRC4 = p_instance_ctrl->ctsuchtrc4;
+ #endif
     }
 
  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
@@ -1600,8 +1834,38 @@ fsp_err_t R_CTSU_ScanStart (ctsu_ctrl_t * const p_ctrl)
     {
         CTSUSST = CTSU_SST_RECOMMEND;
         ctsu_correction_scan_start();
+
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+        /* Disable automatic correction during temperature correction */
+        CTSUOPTL &= 0xFFFEU;        /* CCOCFEN = 0 */
+  #endif
     }
  #endif
+
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    if (CTSU_TUNING_COMPLETE == p_instance_ctrl->tuning)
+    {
+        /* Enable / disable switching of automatic judgement */
+        CTSUOPTL = (CTSUOPTL & 0xFED7U) | (p_instance_ctrl->p_ctsu_cfg->mtucfen << 5U) | (p_instance_ctrl->p_ctsu_cfg->ajfen << 8U);
+
+        if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+        {
+            CTSUAJCRH = (CTSUAJCRH & 0x00CFU) | (p_instance_ctrl->ajbmat << 12U) | (p_instance_ctrl->ajmmat << 8U) | (p_instance_ctrl->p_ctsu_cfg->jc << 4U);
+            /* Set 0 to TJR2, TJR1, TJR0 */
+            CTSUAJRRL &= 0xFFF8;
+        }
+    }
+
+    if (1 == p_instance_ctrl->blini_flag)
+    {
+        /* Set blini to 1 at the first judgement of automatic judgement */
+        CTSUAJCRH |= 0x0001U;
+
+        /* Generates a temporary measurement completion interrupt during snooze mode */
+        CTSUOPTL |= 0x0200U;
+    }
+ #endif
+
  #if (CTSU_CFG_MULTIPLE_ELECTRODE_CONNECTION_ENABLE == 1)
     /* Parameter setting for multiple electrode connection */
     CTSUDBGR0 &= ~CTSUCALIB_TSOD_Msk;
@@ -1615,16 +1879,15 @@ fsp_err_t R_CTSU_ScanStart (ctsu_ctrl_t * const p_ctrl)
 
         /* Set MCH1 when using both MEC and Active Shield.*/
         if((0 != p_instance_ctrl->ctsuchtrc0)
-            || (0 != p_instance_ctrl->ctsuchtrc1)
-            || (0 != p_instance_ctrl->ctsuchtrc2)
-            || (0 != p_instance_ctrl->ctsuchtrc3)
-            || (0 != p_instance_ctrl->ctsuchtrc4))
+                || (0 != p_instance_ctrl->ctsuchtrc1)
+                || (0 != p_instance_ctrl->ctsuchtrc2)
+                || (0 != p_instance_ctrl->ctsuchtrc3)
+                || (0 != p_instance_ctrl->ctsuchtrc4))
         {
             CTSUMCH1 = (p_instance_ctrl->mec_shield_ts & (CTSUMCH_MCH1_Msk >> CTSUMCH_MCH1_Pos));
         }
     }
  #endif
-
 
     p_instance_ctrl->state = CTSU_STATE_SCANNING;
 
@@ -1733,12 +1996,15 @@ fsp_err_t R_CTSU_ScanStart (ctsu_ctrl_t * const p_ctrl)
  * @retval FSP_ERR_CTSU_SCANNING    Scanning this instance.
  * @retval FSP_ERR_CTSU_INCOMPLETE_TUNING      Incomplete initial offset tuning.
  * @retval FSP_ERR_CTSU_DIAG_NOT_YET      Diagnosis of data collected no yet.
+ * @retval FSP_ERR_INVALID_MODE           The mode of automatic judgement on is invalid.
+ * @retval FSP_ERR_ABORTED                Operate error of Diagnosis ADC data collection ,since ADC use other
  **********************************************************************************************************************/
 fsp_err_t R_CTSU_DataGet (ctsu_ctrl_t * const p_ctrl, uint16_t * p_data)
 {
     fsp_err_t              err             = FSP_SUCCESS;
     ctsu_instance_ctrl_t * p_instance_ctrl = (ctsu_instance_ctrl_t *) p_ctrl;
     uint16_t               element_id;
+    uint16_t               majority_mode_id;
 
 #if (CTSU_CFG_PARAM_CHECKING_ENABLE == 1)
     FSP_ASSERT(p_instance_ctrl);
@@ -1746,12 +2012,17 @@ fsp_err_t R_CTSU_DataGet (ctsu_ctrl_t * const p_ctrl, uint16_t * p_data)
     FSP_ERROR_RETURN(CTSU_OPEN == p_instance_ctrl->open, FSP_ERR_NOT_OPEN);
 #endif
     FSP_ERROR_RETURN(CTSU_STATE_SCANNING != p_instance_ctrl->state, FSP_ERR_CTSU_SCANNING);
+    FSP_ERROR_RETURN(0 == p_instance_ctrl->p_ctsu_cfg->ajfen, FSP_ERR_INVALID_MODE);
 
 #if (BSP_FEATURE_CTSU_VERSION == 2)
  #if (CTSU_CFG_TEMP_CORRECTION_SUPPORT == 1)
     if (CTSU_MODE_CORRECTION_SCAN == p_instance_ctrl->md)
     {
         ctsu_correction_data_get(p_instance_ctrl, p_data);
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+        /* Enable automatic correction after temperature correction is completed */
+        CTSUOPTL |= 0x0001U;    /* CCOCFEN = 1 */
+  #endif
         p_instance_ctrl->state = CTSU_STATE_IDLE;
 
         return err;
@@ -1766,6 +2037,10 @@ fsp_err_t R_CTSU_DataGet (ctsu_ctrl_t * const p_ctrl, uint16_t * p_data)
         if (FSP_ERR_CTSU_DIAG_NOT_YET == err)
         {
             err = FSP_ERR_CTSU_DIAG_NOT_YET;
+        }
+        else if (FSP_ERR_ABORTED == err)
+        {
+            err = FSP_ERR_ABORTED;
         }
         else
         {
@@ -1825,7 +2100,6 @@ fsp_err_t R_CTSU_DataGet (ctsu_ctrl_t * const p_ctrl, uint16_t * p_data)
                 ctsu_initial_offset_tuning(p_instance_ctrl);
             }
         }
-
         p_instance_ctrl->state = CTSU_STATE_IDLE;
     }
 
@@ -1836,24 +2110,133 @@ fsp_err_t R_CTSU_DataGet (ctsu_ctrl_t * const p_ctrl, uint16_t * p_data)
     {
         for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
         {
-            *p_data = (p_instance_ctrl->p_self_data + element_id)->int_data;
-            p_data++;
+            for (majority_mode_id = 0; majority_mode_id < CTSU_MAJORITY_MODE_ELEMENTS; majority_mode_id++)
+            {
+                *p_data =
+                    (p_instance_ctrl->p_self_data + element_id * CTSU_MAJORITY_MODE_ELEMENTS +
+                     majority_mode_id)->int_data;
+                p_data++;
+            }
         }
     }
 #endif
 #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
     if (CTSU_MODE_MUTUAL_FULL_SCAN == (CTSU_MODE_MUTUAL_FULL_SCAN & p_instance_ctrl->md))
     {
+        if (true == p_instance_ctrl->serial_tuning_enable)
+        {
+            /* Serial Tuning Phase1 */
+            if ((0 == p_instance_ctrl->ctsuchtrc0) && (0 == p_instance_ctrl->ctsuchtrc1) &&
+                (0 == p_instance_ctrl->ctsuchtrc2) && (0 == p_instance_ctrl->ctsuchtrc3) &&
+                (0 == p_instance_ctrl->ctsuchtrc4))
+            {
+                return FSP_SUCCESS;
+            }
+        }
+
         for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
         {
-            *p_data = (p_instance_ctrl->p_mutual_pri_data + element_id)->int_data;
-            p_data++;
-            *p_data = (p_instance_ctrl->p_mutual_snd_data + element_id)->int_data;
-            p_data++;
+            for (majority_mode_id = 0; majority_mode_id < CTSU_MAJORITY_MODE_ELEMENTS; majority_mode_id++)
+            {
+                *p_data =
+                    (p_instance_ctrl->p_mutual_pri_data + element_id * CTSU_MAJORITY_MODE_ELEMENTS +
+                     majority_mode_id)->int_data;
+                p_data++;
+                *p_data =
+                    (p_instance_ctrl->p_mutual_snd_data + element_id * CTSU_MAJORITY_MODE_ELEMENTS +
+                     majority_mode_id)->int_data;
+                p_data++;
+            }
         }
     }
 #endif
 
+    return err;
+}
+
+/*******************************************************************************************************************//**
+ * @brief This function gets the result of automatic judgement button. Call after the scan is completed.
+ * The result is 64-bit bitmaps and is stored in order of TS number for specified ctsu control.
+ * After the initial judgement, the baseline initialization bit is set and the automatic judgement threshold is set.
+ * This function is called only for automatic judgement.
+ * Implements @ref ctsu_api_t::autoJudgementDataGet.
+ *
+ * Example:
+ * @snippet r_ctsu_example.c R_CTSU_AutoJudgementDataGet
+ *
+ * @retval FSP_SUCCESS              CTSU successfully configured.
+ * @retval FSP_ERR_ASSERTION        Null pointer passed as a parameter.
+ * @retval FSP_ERR_NOT_OPEN         Module is not open.
+ * @retval FSP_ERR_CTSU_SCANNING    Scanning this instance.
+ * @retval FSP_ERR_INVALID_MODE     The mode of automatic judgement off is invalid.
+***********************************************************************************************************************/
+fsp_err_t R_CTSU_AutoJudgementDataGet (ctsu_ctrl_t * const p_ctrl, uint64_t * p_button_status)
+{
+    fsp_err_t              err             = FSP_SUCCESS;
+    ctsu_instance_ctrl_t * p_instance_ctrl = (ctsu_instance_ctrl_t *) p_ctrl;
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    uint16_t               element_id;
+#endif
+
+#if (CTSU_CFG_PARAM_CHECKING_ENABLE == 1)
+    FSP_ASSERT(p_instance_ctrl);
+    FSP_ASSERT(p_button_status);
+    FSP_ERROR_RETURN(CTSU_OPEN == p_instance_ctrl->open, FSP_ERR_NOT_OPEN);
+#endif
+    FSP_ERROR_RETURN(CTSU_STATE_SCANNING != p_instance_ctrl->state, FSP_ERR_CTSU_SCANNING);
+    FSP_ERROR_RETURN(1 == p_instance_ctrl->p_ctsu_cfg->ajfen, FSP_ERR_INVALID_MODE);
+
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    if (1 == p_instance_ctrl->blini_flag)
+    {
+        p_instance_ctrl->blini_flag = 0;
+
+        /* After the initial judgement of automatic judgement, set the baseline initialization bit to 0. */
+        CTSUAJCRH &= 0xFFFEU;
+
+        ctsu_auto_judge_threshold_calc (p_instance_ctrl);
+
+        /* Turn off measurement completion interrupt in snooze mode */
+        CTSUOPTL &= 0xFDFFU;
+    }
+
+    if (CTSU_STATE_SCANNED == p_instance_ctrl->state)
+    {
+        for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
+        {
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+            if (1 == p_instance_ctrl->p_ctsu_cfg->majirimd)
+            {
+                /* Reflect the final result bit of automatic judgement in buttun_status */
+                if (1 == (((p_instance_ctrl->p_auto_judge[element_id].ajrr) >> CTSU_AUTO_FINAL_JUDGE_BIT) & 0x1))
+                {
+                    *p_button_status |= ((uint64_t) 1 << element_id);
+                }
+                else
+                {
+                    *p_button_status &= ~((uint64_t) 1 << element_id);
+                }
+            }
+            else
+ #endif
+            {
+                /* Reflect the final result bit of automatic judgement in buttun_status */
+                /* Since the final result of the automatic judgement is output to the FJR bit of the final multi-clock, */
+                /* the result of the final multi-clock is taken out.                                                   */
+                if (1 == (((p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + (CTSU_MAJORITY_MODE_ELEMENTS - 1)].ajrr) >> CTSU_AUTO_FINAL_JUDGE_BIT) & 0x1))
+                {
+                    *p_button_status |= ((uint64_t) 1 << element_id);
+                }
+                else
+                {
+                    *p_button_status &= ~((uint64_t) 1 << element_id);
+                }
+            }
+        }
+
+        p_instance_ctrl->state = CTSU_STATE_IDLE;
+    }
+#endif
     return err;
 }
 
@@ -1899,7 +2282,7 @@ fsp_err_t R_CTSU_OffsetTuning (ctsu_ctrl_t * const p_ctrl)
 #if (BSP_FEATURE_CTSU_VERSION == 2)
             *(p_instance_ctrl->p_frequency_complete_flag + element_id) = 0;
 #endif
-            *(p_instance_ctrl->p_tuning_diff + element_id) = 0;
+            *(p_instance_ctrl->p_tuning_diff + element_id)  = 0;
         }
     }
 
@@ -1907,8 +2290,48 @@ fsp_err_t R_CTSU_OffsetTuning (ctsu_ctrl_t * const p_ctrl)
 
     if (CTSU_STATE_SCANNED == p_instance_ctrl->state)
     {
-        ctsu_correction_exec(p_instance_ctrl);
+        if (0 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+        {
+            ctsu_correction_exec(p_instance_ctrl);
+        }
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+        else
+        {
+            CTSUOPTL &= 0xFEDFU;    /* AJFEN = 0, MTUCFEN = 0 */
 
+            for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
+            {
+                for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
+                {
+                    if (CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->md)
+                    {
+                        p_instance_ctrl->p_self_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i] = p_instance_ctrl->p_self_raw[(element_id * CTSU_CFG_NUM_SUMULTI) + i];
+                    }
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+                    else
+                    {
+                        p_instance_ctrl->p_mutual_pri_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i] = p_instance_ctrl->p_mutual_raw[(element_id * CTSU_MUTUAL_BUF_SIZE) + (i * 2)];
+                    }
+ #endif
+ #if (CTSU_CFG_MAJORITY_MODE & CTSU_JUDGEMENT_MAJORITY_MODE)
+                    /* Initial value setting of DTC transfer information for automatic judgement */
+                    p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].ajthr   = 0;
+                    p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].ajmmar  = 0;
+                    p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].ajblact = 0;
+                    p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].ajblar  = 0;
+                    p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].ajrr    = 0;
+ #endif
+                }
+ #if ((CTSU_CFG_MAJORITY_MODE & CTSU_JUDGEMENT_MAJORITY_MODE) == 0)
+                p_instance_ctrl->p_auto_judge[element_id].ajthr   = 0;
+                p_instance_ctrl->p_auto_judge[element_id].ajmmar  = 0;
+                p_instance_ctrl->p_auto_judge[element_id].ajblact = 0;
+                p_instance_ctrl->p_auto_judge[element_id].ajblar  = 0;
+                p_instance_ctrl->p_auto_judge[element_id].ajrr    = 0;
+ #endif
+            }
+        }
+#endif
         if (CTSU_TUNING_INCOMPLETE == p_instance_ctrl->tuning)
         {
             if ((CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->md) ||
@@ -1917,7 +2340,19 @@ fsp_err_t R_CTSU_OffsetTuning (ctsu_ctrl_t * const p_ctrl)
                 ctsu_initial_offset_tuning(p_instance_ctrl);
             }
         }
-
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+        if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+        {
+            if (CTSU_TUNING_COMPLETE == p_instance_ctrl->tuning)
+            {
+                /* Initialization of baseline mean for automatic judgement */
+                p_instance_ctrl->blini_flag = 1;
+            }
+        }
+#endif
+#if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+        p_instance_ctrl->mcact_flag = 0;
+#endif
         p_instance_ctrl->state = CTSU_STATE_IDLE;
     }
 
@@ -1925,7 +2360,6 @@ fsp_err_t R_CTSU_OffsetTuning (ctsu_ctrl_t * const p_ctrl)
 
     return err;
 }
-
 
 /*******************************************************************************************************************//**
  * @brief This function scan stops the sensor as scanning by the CTSU.
@@ -2074,6 +2508,12 @@ fsp_err_t R_CTSU_Close (ctsu_ctrl_t * const p_ctrl)
 #if (CTSU_CFG_DTC_SUPPORT_ENABLE == 1)
         err = ctsu_transfer_close(p_instance_ctrl);
 #endif
+
+#if (BSP_FEATURE_CTSU_VERSION == 2)
+        CTSUCRAL &= 0xFFFEU;
+#else
+        CTSUCR0 &= 0xFFFEU;
+#endif
     }
 
     p_instance_ctrl->state = CTSU_STATE_INIT;
@@ -2089,14 +2529,19 @@ fsp_err_t R_CTSU_Close (ctsu_ctrl_t * const p_ctrl)
  * By setting the third argument to CTSU_SPECIFIC_RAW_DATA,
  * RAW data can be output from the second argument.
  *
- * By setting the third argument to CTSU_SPECIFIC_CORRECTION_DATA,
- * the corrected data can be output from the second argument.
+ * By setting the third argument to CTSU_SPECIFIC_CCO_CORRECTION_DATA,
+ * the cco corrected data can be output from the second argument.
  *
- * By setting the third argument to CTSU_SPECIFIC_SELECTED_DATA,
- * Get bitmap of the frequency values used in majority decision from the second argument.
+ * By setting the third argument to CTSU_SPECIFIC_CORRECTION_DATA,
+ * the frequency corrected data can be output from the second argument.
+ *
+ * By setting the third argument to CTSU_SPECIFIC_SELECTED_FREQ,
+ * Get bitmap of the frequency values used in majority decision from the second argument.(CTSU2 Only)
  * The bitmap is shown as follows.
- * ||2bit                | 1bit                | 0bit                ||
- * ||3rd frequency value | 2nd frequency value | 1st frequency value ||
+ *
+ * | 2bit                | 1bit                | 0bit                |
+ * |---------------------|---------------------|---------------------|
+ * | 3rd frequency value | 2nd frequency value | 1st frequency value |
  *
  * Implements @ref ctsu_api_t::specificDataGet.
  *
@@ -2115,16 +2560,27 @@ fsp_err_t R_CTSU_SpecificDataGet (ctsu_ctrl_t * const       p_ctrl,
                                   uint16_t                * p_specific_data,
                                   ctsu_specific_data_type_t specific_data_type)
 {
-    fsp_err_t err = FSP_SUCCESS;
-    uint16_t  element_id;
-    uint16_t  i;
+    fsp_err_t              err = FSP_SUCCESS;
+    uint16_t               element_id;
+    uint16_t               i;
+    ctsu_instance_ctrl_t * p_instance_ctrl = (ctsu_instance_ctrl_t *) p_ctrl;
 #if (BSP_FEATURE_CTSU_VERSION == 2)
     uint32_t                ctsuso;
     ctsu_correction_multi_t multi;
     uint32_t                snum;
     int32_t                 offset_unit;
+    uint16_t                corr_pri[CTSU_CFG_NUM_SUMULTI];
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+    uint16_t corr_snd[CTSU_CFG_NUM_SUMULTI];
+ #endif
+    for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
+    {
+        corr_pri[i] = 0;
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+        corr_snd[i] = 0;
+ #endif
+    }
 #endif
-    ctsu_instance_ctrl_t * p_instance_ctrl = (ctsu_instance_ctrl_t *) p_ctrl;
 
 #if (CTSU_CFG_PARAM_CHECKING_ENABLE == 1)
     FSP_ASSERT(p_instance_ctrl);
@@ -2136,6 +2592,51 @@ fsp_err_t R_CTSU_SpecificDataGet (ctsu_ctrl_t * const       p_ctrl,
 
 #if (BSP_FEATURE_CTSU_VERSION == 1)
     FSP_ERROR_RETURN(CTSU_SPECIFIC_SELECTED_FREQ != specific_data_type, FSP_ERR_NOT_ENABLED);
+#endif
+#if (BSP_FEATURE_CTSU_VERSION == 2)
+ #if (CTSU_CFG_MAJORITY_MODE & CTSU_JUDGEMENT_MAJORITY_MODE)
+    FSP_ERROR_RETURN(CTSU_SPECIFIC_SELECTED_FREQ != specific_data_type, FSP_ERR_NOT_ENABLED);
+    FSP_ERROR_RETURN(CTSU_SPECIFIC_CORRECTION_DATA != specific_data_type, FSP_ERR_NOT_ENABLED);
+ #endif
+ #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+    FSP_ERROR_RETURN(CTSU_SPECIFIC_RAW_DATA != specific_data_type, FSP_ERR_NOT_ENABLED);
+ #endif
+
+ #if (CTSU_CFG_MAJORITY_MODE & (CTSU_JUDGEMENT_MAJORITY_MODE | CTSU_VALUE_MAJORITY_MODE))
+    if (p_instance_ctrl->p_ctsu_cfg->majority_mode == 1)
+    {
+        FSP_ERROR_RETURN(CTSU_SPECIFIC_CORRECTION_DATA != specific_data_type, FSP_ERR_NOT_ENABLED);
+    }
+ #endif
+
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+    if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+    {
+        if (1 == p_instance_ctrl->p_ctsu_cfg->majirimd)
+        {
+            FSP_ERROR_RETURN(CTSU_SPECIFIC_CCO_CORRECTION_DATA != specific_data_type, FSP_ERR_NOT_ENABLED);
+            FSP_ERROR_RETURN(CTSU_SPECIFIC_CORRECTION_DATA != specific_data_type, FSP_ERR_NOT_ENABLED);
+            FSP_ERROR_RETURN(CTSU_SPECIFIC_SELECTED_FREQ != specific_data_type, FSP_ERR_NOT_ENABLED);
+        }
+    }
+    else
+    {
+        if (0 == p_instance_ctrl->p_ctsu_cfg->majority_mode)
+        {
+            FSP_ERROR_RETURN(CTSU_SPECIFIC_CCO_CORRECTION_DATA != specific_data_type, FSP_ERR_NOT_ENABLED);
+        }
+    }
+ #endif
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+    {
+        if (0 == p_instance_ctrl->p_ctsu_cfg->majirimd)
+        {
+            FSP_ERROR_RETURN(CTSU_SPECIFIC_CORRECTION_DATA != specific_data_type, FSP_ERR_NOT_ENABLED);
+            FSP_ERROR_RETURN(CTSU_SPECIFIC_SELECTED_FREQ != specific_data_type, FSP_ERR_NOT_ENABLED);
+        }
+    }
+ #endif
 #endif
 
     if (CTSU_SPECIFIC_RAW_DATA == specific_data_type)
@@ -2185,14 +2686,72 @@ fsp_err_t R_CTSU_SpecificDataGet (ctsu_ctrl_t * const       p_ctrl,
         }
 #endif
     }
-    else if (CTSU_SPECIFIC_CORRECTION_DATA == specific_data_type)
+    else if (CTSU_SPECIFIC_CCO_CORRECTION_DATA == specific_data_type)
     {
 #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
         if (CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->md)
         {
             for (element_id = 0; element_id < (p_instance_ctrl->num_elements); element_id++)
             {
+                for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
+                {
  #if (BSP_FEATURE_CTSU_VERSION == 2)
+  #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+                    if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+                    {
+                        *p_specific_data = *(p_instance_ctrl->p_self_raw + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
+                        p_specific_data++;
+                    }
+                    else
+  #endif
+ #endif
+                    {
+                        *p_specific_data = *(p_instance_ctrl->p_self_corr + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
+                        p_specific_data++;
+                    }
+                }
+            }
+        }
+#endif
+#if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+        if (CTSU_MODE_MUTUAL_FULL_SCAN == (CTSU_MODE_MUTUAL_FULL_SCAN & p_instance_ctrl->md))
+        {
+            for (element_id = 0; element_id < (p_instance_ctrl->num_elements); element_id++)
+            {
+                for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
+                {
+ #if (BSP_FEATURE_CTSU_VERSION == 2)
+  #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+                    if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+                    {
+                        *p_specific_data = *(p_instance_ctrl->p_mutual_raw + ((element_id * CTSU_MUTUAL_BUF_SIZE) + (i * 2)));
+                        p_specific_data++;
+                        *p_specific_data = *(p_instance_ctrl->p_mutual_raw + ((element_id * CTSU_MUTUAL_BUF_SIZE) + (i * 2) + 1));
+                        p_specific_data++;
+                    }
+                    else
+  #endif
+ #endif
+                    {
+                        *p_specific_data = *(p_instance_ctrl->p_mutual_pri_corr + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
+                        p_specific_data++;
+                        *p_specific_data = *(p_instance_ctrl->p_mutual_snd_corr + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
+                        p_specific_data++;
+                    }
+                }
+            }
+        }
+#endif
+    }
+
+#if (BSP_FEATURE_CTSU_VERSION == 2)
+    else if (CTSU_SPECIFIC_CORRECTION_DATA == specific_data_type)
+    {
+ #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
+        if (CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->md)
+        {
+            for (element_id = 0; element_id < (p_instance_ctrl->num_elements); element_id++)
+            {
                 for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
                 {
                     ctsuso =
@@ -2207,24 +2766,31 @@ fsp_err_t R_CTSU_SpecificDataGet (ctsu_ctrl_t * const       p_ctrl,
                     multi.snd[i] = 0;
                 }
 
-                ctsu_correction_fleq(&multi,
-                                     (p_instance_ctrl->p_self_corr + (element_id * CTSU_CFG_NUM_SUMULTI)),
-                                     NULL);
- #endif
-                for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
+  #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 0)
+                ctsu_correction_freq(&multi, corr_pri, NULL);
+  #else
+                for (i = 1; i < CTSU_CFG_NUM_SUMULTI; i++)
                 {
-                    *p_specific_data = *(p_instance_ctrl->p_self_corr + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
+                    corr_pri[i] = multi.pri[i];
+                }
+  #endif
+
+                *p_specific_data = *(p_instance_ctrl->p_self_corr + (element_id * CTSU_CFG_NUM_SUMULTI));
+                p_specific_data++;
+
+                for (i = 1; i < CTSU_CFG_NUM_SUMULTI; i++)
+                {
+                    *p_specific_data = corr_pri[i];
                     p_specific_data++;
                 }
             }
         }
-#endif
-#if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+ #endif
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
         if (CTSU_MODE_MUTUAL_FULL_SCAN == (CTSU_MODE_MUTUAL_FULL_SCAN & p_instance_ctrl->md))
         {
             for (element_id = 0; element_id < (p_instance_ctrl->num_elements); element_id++)
             {
- #if (BSP_FEATURE_CTSU_VERSION == 2)
                 for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
                 {
                     ctsuso =
@@ -2239,23 +2805,32 @@ fsp_err_t R_CTSU_SpecificDataGet (ctsu_ctrl_t * const       p_ctrl,
                     multi.snd[i] = *(p_instance_ctrl->p_mutual_snd_corr + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
                 }
 
-                ctsu_correction_fleq(&multi,
-                                     (p_instance_ctrl->p_mutual_pri_corr + (element_id * CTSU_CFG_NUM_SUMULTI)),
-                                     (p_instance_ctrl->p_mutual_snd_corr + (element_id * CTSU_CFG_NUM_SUMULTI)));
- #endif
-                for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
+  #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 0)
+                ctsu_correction_freq(&multi, corr_pri, corr_snd);
+  #else
+                for (i = 1; i < CTSU_CFG_NUM_SUMULTI; i++)
                 {
-                    *p_specific_data = *(p_instance_ctrl->p_mutual_pri_corr + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
+                    corr_pri[i] = multi.pri[i];
+                    corr_snd[i] = multi.snd[i];
+                }
+  #endif
+
+                *p_specific_data = *(p_instance_ctrl->p_mutual_pri_corr + (element_id * CTSU_CFG_NUM_SUMULTI));
+                p_specific_data++;
+                *p_specific_data = *(p_instance_ctrl->p_mutual_snd_corr + (element_id * CTSU_CFG_NUM_SUMULTI));
+                p_specific_data++;
+
+                for (i = 1; i < CTSU_CFG_NUM_SUMULTI; i++)
+                {
+                    *p_specific_data = corr_pri[i];
                     p_specific_data++;
-                    *p_specific_data = *(p_instance_ctrl->p_mutual_snd_corr + (element_id * CTSU_CFG_NUM_SUMULTI) + i);
+                    *p_specific_data = corr_snd[i];
                     p_specific_data++;
                 }
             }
         }
-#endif
+ #endif
     }
-
-#if (BSP_FEATURE_CTSU_VERSION == 2)
     else if (CTSU_SPECIFIC_SELECTED_FREQ == specific_data_type)
     {
  #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
@@ -2306,7 +2881,7 @@ fsp_err_t R_CTSU_DataInsert (ctsu_ctrl_t * const p_ctrl, uint16_t * p_insert_dat
     fsp_err_t              err             = FSP_SUCCESS;
     ctsu_instance_ctrl_t * p_instance_ctrl = (ctsu_instance_ctrl_t *) p_ctrl;
     uint16_t               element_id;
-
+    uint16_t               majority_mode_elem_id;
 #if (CTSU_CFG_PARAM_CHECKING_ENABLE == 1)
     FSP_ASSERT(p_instance_ctrl);
     FSP_ASSERT(p_insert_data);
@@ -2321,8 +2896,14 @@ fsp_err_t R_CTSU_DataInsert (ctsu_ctrl_t * const p_ctrl, uint16_t * p_insert_dat
         /* Data output */
         for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
         {
-            (p_instance_ctrl->p_self_data + element_id)->int_data = *p_insert_data;
-            p_insert_data++;
+            for (majority_mode_elem_id = 0;
+                 majority_mode_elem_id < CTSU_MAJORITY_MODE_ELEMENTS;
+                 majority_mode_elem_id++)
+            {
+                (p_instance_ctrl->p_self_data + (element_id * CTSU_MAJORITY_MODE_ELEMENTS) +
+                 majority_mode_elem_id)->int_data = *p_insert_data;
+                p_insert_data++;
+            }
         }
     }
 #endif
@@ -2331,10 +2912,17 @@ fsp_err_t R_CTSU_DataInsert (ctsu_ctrl_t * const p_ctrl, uint16_t * p_insert_dat
     {
         for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
         {
-            (p_instance_ctrl->p_mutual_pri_data + element_id)->int_data = *p_insert_data;
-            p_insert_data++;
-            (p_instance_ctrl->p_mutual_snd_data + element_id)->int_data = *p_insert_data;
-            p_insert_data++;
+            for (majority_mode_elem_id = 0;
+                 majority_mode_elem_id < CTSU_MAJORITY_MODE_ELEMENTS;
+                 majority_mode_elem_id++)
+            {
+                (p_instance_ctrl->p_mutual_pri_data + (element_id * CTSU_MAJORITY_MODE_ELEMENTS) +
+                 majority_mode_elem_id)->int_data = *p_insert_data;
+                p_insert_data++;
+                (p_instance_ctrl->p_mutual_snd_data + (element_id * CTSU_MAJORITY_MODE_ELEMENTS) +
+                 majority_mode_elem_id)->int_data = *p_insert_data;
+                p_insert_data++;
+            }
         }
     }
 #endif
@@ -2355,7 +2943,6 @@ fsp_err_t R_CTSU_DataInsert (ctsu_ctrl_t * const p_ctrl, uint16_t * p_insert_dat
  **********************************************************************************************************************/
 
 #if (CTSU_CFG_DTC_SUPPORT_ENABLE == 1)
-
 /***********************************************************************************************************************
  * ctsu_transfer_open
  ***********************************************************************************************************************/
@@ -2390,6 +2977,11 @@ fsp_err_t ctsu_transfer_open (ctsu_instance_ctrl_t * const p_instance_ctrl)
     dtc_vectortable[33] = 0xE8U;
     /* Set DTCD22 */
     dtc_vectortable[34] = 0xF0U;
+#elif BSP_MCU_GROUP_RL78F25
+    /* Set DTCD22 */
+    dtc_vectortable[16] = 0xF0U;
+    /* Set DTCD23 */
+    dtc_vectortable[17] = 0xF8U;
 #else
     /* Set DTCD22 */
     dtc_vectortable[33] = 0xF0U;
@@ -2414,6 +3006,45 @@ fsp_err_t ctsu_transfer_close (ctsu_instance_ctrl_t * const p_instance_ctrl)
  ***********************************************************************************************************************/
 fsp_err_t ctsu_transfer_configure (ctsu_instance_ctrl_t * const p_instance_ctrl)
 {
+    /* After the initial offset tuning is completed, set the DTC for automatic judgement.                              */
+    /* In addition, the method for which automatic judgement is disabled does not set the DTC for automatic judgement. */
+    /* Alternatively, DTC for automatic judgment will not be set during correction measurement.                        */
+    if ((CTSU_TUNING_INCOMPLETE == p_instance_ctrl->tuning) || (CTSU_CORRECTION_RUN == g_ctsu_correction_info.status) || (0 == p_instance_ctrl->p_ctsu_cfg->ajfen))
+    {
+        ctsu_transfer_normal(p_instance_ctrl);
+    }
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    else    
+    {
+        /* DTC setting for automatic judgement */
+        ctsu_transfer_autojudge(p_instance_ctrl);
+    }
+ #endif
+
+    return FSP_SUCCESS;
+}
+
+/***********************************************************************************************************************
+ * ctsu_transfer_normal
+ ***********************************************************************************************************************/
+void ctsu_transfer_normal (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    ctsu_transfer_normal_ctsuwr(p_instance_ctrl);
+
+    ctsu_transfer_normal_ctsurd(p_instance_ctrl);
+}
+
+/***********************************************************************************************************************
+ * ctsu_transfer_normal_ctsuwr
+ ***********************************************************************************************************************/
+void ctsu_transfer_normal_ctsuwr (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+#if BSP_MCU_GROUP_RL78F25
+    DTCEN2 &= 0x7F; //CTSUWR
+#else
+    DTCEN4 &= 0xBF; //CTSUWR
+#endif
+
 #if BSP_MCU_GROUP_RL78G22
     /* CTSUWR setting */
     /* TRANSFER_MODE_NORMAL | DATA_SIZE_16BITS | SOURCE_ADDR_INCREMENTED | DEST_ADDR_FIXED | CHAIN_TRANSFER_DISABLE */
@@ -2461,9 +3092,14 @@ fsp_err_t ctsu_transfer_configure (ctsu_instance_ctrl_t * const p_instance_ctrl)
         dtc_controldata_21.dtsar = (uint16_t)p_instance_ctrl->p_ctsuwr;
     }
 #else
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    dtc_vectortable[16] = 0xF0U;
+ #endif
+
     /* CTSUWR setting */
     /* TRANSFER_MODE_NORMAL | DATA_SIZE_16BITS | SOURCE_ADDR_INCREMENTED | DEST_ADDR_FIXED | CHAIN_TRANSFER_DISABLE */
     dtc_controldata_22.dtccr = 0x44;
+
     /* 4byte */
     dtc_controldata_22.dtbls = 2;
     dtc_controldata_22.dtrld = 0x00U;
@@ -2501,14 +3137,52 @@ fsp_err_t ctsu_transfer_configure (ctsu_instance_ctrl_t * const p_instance_ctrl)
         }
         else
         {
-            dtc_controldata_22.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE != 0)
+            if ((0 == p_instance_ctrl->p_ctsu_cfg->majority_mode) && (CTSU_TUNING_INCOMPLETE != p_instance_ctrl->tuning))
+            {
+                dtc_vectortable[16] = 0xE8U;
+                dtc_controldata_21.dtccr = 0x54;
+                dtc_controldata_21.dtbls = 2;
+                dtc_controldata_21.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+                dtc_controldata_21.dtrld = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+                dtc_controldata_21.dtsar = (uint16_t) p_instance_ctrl->p_mcact1;
+                dtc_controldata_21.dtdar = (uint16_t) &CTSUMACT1L;
+
+                dtc_controldata_22.dtccr = 0x44;
+                dtc_controldata_22.dtbls = 2;
+                dtc_controldata_22.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+                dtc_controldata_22.dtrld = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+                dtc_controldata_22.dtsar = (uint16_t) p_instance_ctrl->p_ctsuwr;
+                dtc_controldata_22.dtdar = (uint16_t) &CTSUSO0;
+            }
+            else
+ #endif
+            {
+                dtc_controldata_22.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+            }
         }
 
         dtc_controldata_22.dtsar = (uint16_t)p_instance_ctrl->p_ctsuwr;
     }
 #endif
 
+#if BSP_MCU_GROUP_RL78F25
+    DTCEN2 |= 0x80; //CTSUWR
+#else
     DTCEN4 |= 0x40; //CTSUWR
+#endif
+}
+
+/***********************************************************************************************************************
+ * ctsu_transfer_normal_ctsurd
+ ***********************************************************************************************************************/
+void ctsu_transfer_normal_ctsurd (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+#if BSP_MCU_GROUP_RL78F25
+    DTCEN2 &= 0xBF; //CTSURD
+#else
+    DTCEN4 &= 0xDF; //CTSURD
+#endif
 
 #if BSP_MCU_GROUP_RL78G22
     /* CTSURD setting */
@@ -2566,6 +3240,10 @@ fsp_err_t ctsu_transfer_configure (ctsu_instance_ctrl_t * const p_instance_ctrl)
  #endif
     }
 #else
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+    dtc_vectortable[17] = 0xF8U;
+ #endif
+
     /* CTSURD setting */
     /* TRANSFER_MODE_NORMAL | DATA_SIZE_16BITS | SOURCE_ADDR_FIXED | DEST_ADDR_INCREMENTED | CHAIN_TRANSFER_DISABLE */
     dtc_controldata_23.dtccr = 0x48U;
@@ -2622,10 +3300,147 @@ fsp_err_t ctsu_transfer_configure (ctsu_instance_ctrl_t * const p_instance_ctrl)
     }
 #endif
 
+#if BSP_MCU_GROUP_RL78F25
+    DTCEN2 |= 0x40; //CTSURD
+#else
     DTCEN4 |= 0x20; //CTSURD
-
-    return FSP_SUCCESS;
+#endif
 }
+
+#if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+/***********************************************************************************************************************
+ * ctsu_transfer_autojudge
+ ***********************************************************************************************************************/
+void ctsu_transfer_autojudge (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    ctsu_transfer_autojudge_ctsuwr(p_instance_ctrl);
+
+    ctsu_transfer_autojudge_ctsurd(p_instance_ctrl);
+}
+
+/***********************************************************************************************************************
+ * ctsu_transfer_autojudge_ctsuwr
+ ***********************************************************************************************************************/
+void ctsu_transfer_autojudge_ctsuwr (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    DTCEN2 &= 0x7F; //CTSUWR
+
+#if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+    if (1 == p_instance_ctrl->p_ctsu_cfg->majirimd)
+    {
+        /* Set DTCD18 */
+        dtc_vectortable[16U] = 0xD0U;
+        dtc_controldata_18.dtccr = 0x53;
+        dtc_controldata_18.dtbls = 10;
+        dtc_controldata_18.dtcct = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_18.dtrld = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_18.dtsar = (uint16_t) &p_instance_ctrl->p_auto_judge->ajthr;
+        dtc_controldata_18.dtdar = (uint16_t) &CTSUAJTHRL;
+
+        /* Set DTCD19 */
+        dtc_controldata_19.dtccr = 0x53;
+        dtc_controldata_19.dtbls = 2;
+        dtc_controldata_19.dtcct = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_19.dtrld = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_19.dtsar = (uint16_t) p_instance_ctrl->p_mcact1;
+        dtc_controldata_19.dtdar = (uint16_t) &CTSUMACT1L;
+
+        /* Set DTCD20 */
+        dtc_controldata_20.dtccr = 0x53;
+        dtc_controldata_20.dtbls = 2;
+        dtc_controldata_20.dtcct = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_20.dtrld = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_20.dtsar = (uint16_t) p_instance_ctrl->p_mcact2;
+        dtc_controldata_20.dtdar = (uint16_t) &CTSUMACT2L;
+
+        /* Set DTCD21 */
+        dtc_controldata_21.dtccr = 0x43;
+        dtc_controldata_21.dtbls = 2;
+        dtc_controldata_21.dtcct = (uint16_t) (p_instance_ctrl->num_elements);
+        dtc_controldata_21.dtrld = (uint16_t) (p_instance_ctrl->num_elements);
+        dtc_controldata_21.dtsar = (uint16_t) p_instance_ctrl->p_ctsuwr;
+        dtc_controldata_21.dtdar = (uint16_t) &CTSUSO0;
+    }
+    else
+#endif
+    {
+        /* Set DTCD20 */
+        dtc_vectortable[16U] = 0xE0U;
+        dtc_controldata_20.dtccr = 0x53;
+        dtc_controldata_20.dtbls = 10;
+        dtc_controldata_20.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_20.dtrld = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_20.dtsar = (uint16_t) &p_instance_ctrl->p_auto_judge->ajthr;
+        dtc_controldata_20.dtdar = (uint16_t) &CTSUAJTHRL;
+
+        /* Set DTCD21 */
+        dtc_controldata_21.dtccr = 0x43;
+        dtc_controldata_21.dtbls = 2;
+        dtc_controldata_21.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_21.dtrld = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_21.dtsar = (uint16_t) p_instance_ctrl->p_ctsuwr;
+        dtc_controldata_21.dtdar = (uint16_t) &CTSUSO0;
+    }
+
+    DTCEN2 |= 0x80; //CTSUWR
+}
+
+/***********************************************************************************************************************
+ * ctsu_transfer_autojudge_ctsurd
+ ***********************************************************************************************************************/
+void ctsu_transfer_autojudge_ctsurd (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    DTCEN2 &= 0xBF; //CTSURD
+
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+    if (1 == p_instance_ctrl->p_ctsu_cfg->majirimd)
+    {
+        /* Set DTCD22 */
+        dtc_vectortable[17U] = 0xF0U;
+        dtc_controldata_22.dtccr = 0x51;
+        dtc_controldata_22.dtbls = 10;
+        dtc_controldata_22.dtcct = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_22.dtrld = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_22.dtsar = (uint16_t) &CTSUAJTHRL;
+        dtc_controldata_22.dtdar = (uint16_t) &p_instance_ctrl->p_auto_judge->ajthr;
+        /* Set DTCD23 */
+        dtc_controldata_23.dtccr = 0x41;
+        dtc_controldata_23.dtbls = 1;
+        dtc_controldata_23.dtcct = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_23.dtrld = (uint16_t) p_instance_ctrl->num_elements;
+        dtc_controldata_23.dtsar = (uint16_t) &CTSUSC;
+        dtc_controldata_23.dtdar = (uint16_t) p_instance_ctrl->p_self_raw;
+    }
+    else
+ #endif
+    {
+        /* Set DTCD22 */
+        dtc_vectortable[17U] = 0xF0U;
+        dtc_controldata_22.dtccr = 0x51;
+        dtc_controldata_22.dtbls = 10;
+        dtc_controldata_22.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_22.dtrld = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_22.dtsar = (uint16_t) &CTSUAJTHRL;
+        dtc_controldata_22.dtdar = (uint16_t) &p_instance_ctrl->p_auto_judge->ajthr;
+        /* Set DTCD23 */
+        dtc_controldata_23.dtccr = 0x41;
+        dtc_controldata_23.dtbls = 1;
+        dtc_controldata_23.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_23.dtrld = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
+        dtc_controldata_23.dtsar = (uint16_t) &CTSUSC;
+        dtc_controldata_23.dtdar = (uint16_t) p_instance_ctrl->p_self_raw;
+    }
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+    if (CTSU_MODE_MUTUAL_FULL_SCAN == (CTSU_MODE_MUTUAL_FULL_SCAN & p_instance_ctrl->md))
+    {
+        dtc_controldata_23.dtdar = (uint16_t) p_instance_ctrl->p_mutual_raw;
+    }
+ #endif
+
+    DTCEN2 |= 0x40; //CTSURD
+}
+
+#endif
 
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
 /***********************************************************************************************************************
@@ -2869,13 +3684,13 @@ void ctsu_initial_offset_tuning (ctsu_instance_ctrl_t * const p_instance_ctrl)
                     }
 
                     snum = (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI)].ctsuso >> 10) &
-                        CTSU_SNUM_MAX;
+                           CTSU_SNUM_MAX;
                     target_val  = (uint16_t) (((uint32_t) target_val * (snum + 1)) / (CTSU_SNUM_RECOMMEND + 1));
                     offset_unit = (int32_t) ((CTSU_CORRECTION_OFFSET_UNIT * (snum + 1)) / (CTSU_SNUM_RECOMMEND + 1));
 
                     /* Calculate CTSUSO equivalent difference between current value and target value */
                     diff = (int32_t) ((int32_t) corr_data[i] - (int32_t) target_val) /
-                        (offset_unit >> p_instance_ctrl->range);
+                           (offset_unit >> p_instance_ctrl->range);
 
                     ctsuso  = (int32_t) (p_instance_ctrl->p_ctsuwr[element_top + i].ctsuso & CTSU_TUNING_MAX);
                     ctsuso += diff;
@@ -2884,19 +3699,19 @@ void ctsu_initial_offset_tuning (ctsu_instance_ctrl_t * const p_instance_ctrl)
                     if (ctsuso < 0)
                     {
                         ctsuso = 0;
-                        p_instance_ctrl->p_frequency_complete_flag[element_id] += (uint8_t)(1 << i);
+                        p_instance_ctrl->p_frequency_complete_flag[element_id] += (uint8_t) (1 << i);
                     }
                     else if (ctsuso > CTSU_TUNING_MAX)
                     {
                         ctsuso = CTSU_TUNING_MAX;
-                        p_instance_ctrl->p_frequency_complete_flag[element_id] += (uint8_t)(1 << i);
+                        p_instance_ctrl->p_frequency_complete_flag[element_id] += (uint8_t) (1 << i);
                     }
                     else
                     {
                         /* If the difference is large, tuning value may not be able to match, so create the next opportunity */
                         if (0 == diff)
                         {
-                            p_instance_ctrl->p_frequency_complete_flag[element_id] += (uint8_t)(1 << i);
+                            p_instance_ctrl->p_frequency_complete_flag[element_id] += (uint8_t) (1 << i);
                         }
                     }
 
@@ -2920,6 +3735,7 @@ void ctsu_initial_offset_tuning (ctsu_instance_ctrl_t * const p_instance_ctrl)
             num_complete++;
             *(p_instance_ctrl->p_element_complete_flag + element_id) = 1;
         }
+
         complete_flag = 0;
     }
 
@@ -2936,7 +3752,7 @@ void ctsu_moving_average (ctsu_data_t * p_average, uint16_t new_data, uint16_t a
 {
     uint32_t work;
 
-    work  = (uint32_t)(((uint32_t) p_average->int_data << CTSU_CFG_DECIMAL_POINT) + p_average->decimal_point_data);;
+    work  = (uint32_t)(((uint32_t) p_average->int_data << CTSU_CFG_DECIMAL_POINT) + p_average->decimal_point_data);
     work -= (uint32_t)(work / average_num);
     work += (uint32_t)(((uint32_t) new_data << CTSU_CFG_DECIMAL_POINT) / average_num);
 
@@ -2976,18 +3792,18 @@ void ctsu_write_isr (void)
     else if (CTSU_MODE_DIAGNOSIS_SCAN == p_instance_ctrl->md)
     {
  #if (BSP_FEATURE_CTSU_VERSION == 2)
- #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
+  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
         CTSUSO0 = (uint16_t)g_ctsu_diag_info.ctsuwr.ctsuso;
         CTSUSO1 = (uint16_t)(g_ctsu_diag_info.ctsuwr.ctsuso >> 16);
         p_instance_ctrl->wr_index++;
- #endif
+  #endif
  #endif
  #if (BSP_FEATURE_CTSU_VERSION == 1)
-  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
+ #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
         CTSUSSC = g_ctsu_diag_info.ctsuwr.ctsussc;
         CTSUSO0 = g_ctsu_diag_info.ctsuwr.ctsuso0;
         CTSUSO1 = g_ctsu_diag_info.ctsuwr.ctsuso1;
-  #endif
+ #endif
  #endif
     }
     else
@@ -3035,13 +3851,13 @@ void ctsu_read_isr (void)
         g_ctsu_correction_info.scanbuf.ref = CTSURC;
     }
 
-   #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
+  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
     else if (CTSU_MODE_DIAGNOSIS_SCAN == p_instance_ctrl->md)
     {
         g_ctsu_diag_info.scanbuf.sen = CTSUSC;
         g_ctsu_diag_info.scanbuf.ref = CTSURC;
     }
-   #endif
+  #endif
     else
     {
   #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
@@ -3088,6 +3904,7 @@ void ctsu_read_isr (void)
   #endif
     }
  #endif
+
  #if (BSP_FEATURE_CTSU_VERSION == 2)
   #if (CTSU_CFG_NUM_CFC != 0)
     uint16_t i;
@@ -3191,6 +4008,7 @@ void ctsu_end_isr (void)
         }
     }
 #endif
+
 #if (BSP_FEATURE_CTSU_VERSION == 2)
  #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
     if (CTSU_MODE_MUTUAL_FULL_SCAN == p_instance_ctrl->md)
@@ -3381,10 +4199,10 @@ void ctsu_end_interrupt (ctsu_instance_ctrl_t * const p_instance_ctrl)
 
         /* Set MCH1 when using both MEC and Active Shield.*/
         if((0 != p_instance_ctrl->ctsuchtrc0)
-            || (0 != p_instance_ctrl->ctsuchtrc1)
-            || (0 != p_instance_ctrl->ctsuchtrc2)
-            || (0 != p_instance_ctrl->ctsuchtrc3)
-            || (0 != p_instance_ctrl->ctsuchtrc4))
+                || (0 != p_instance_ctrl->ctsuchtrc1)
+                || (0 != p_instance_ctrl->ctsuchtrc2)
+                || (0 != p_instance_ctrl->ctsuchtrc3)
+                || (0 != p_instance_ctrl->ctsuchtrc4))
         {
             CTSUMCH1 = (p_instance_ctrl->mec_shield_ts & (CTSUMCH_MCH1_Msk >> CTSUMCH_MCH1_Pos));
         }
@@ -3538,7 +4356,12 @@ void ctsu_correction_process (ctsu_instance_ctrl_t * const p_instance_ctrl)
     /*           in each range. The theoretical value of the current is 12.5uA. */
     CTSUCHACAL = 1;
     CTSUCHACAH = 0;
+
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHACBL = 0;
+#endif
+
     CTSUDBGR0 |= CTSUCALIB_TSOC_Msk;
     for (i = 0; i < CTSU_RANGE_NUM; i++)
     {
@@ -3632,6 +4455,13 @@ void ctsu_correction_process (ctsu_instance_ctrl_t * const p_instance_ctrl)
             (uint16_t) (((uint32_t) g_ctsu_correction_info.error_rate[i] << CTSU_SHIFT_AMOUNT) /
                         g_ctsu_correction_info.error_rate[CTSU_RANGE_160UA]);
     }
+
+ #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+    ctsu_auto_correction_register_set (p_instance_ctrl);
+
+    /* Sensor counter auto correction enabled */
+    CTSUOPTL |= 0x0001U;        /* CCOCFEN = 1 */
+ #endif
     g_ctsu_correction_info.status = CTSU_CORRECTION_COMPLETE;
 #endif
 #if (BSP_FEATURE_CTSU_VERSION == 1)
@@ -3798,8 +4628,11 @@ void ctsu_correction_scan_start (void)
         /* Dummy setting */
         CTSUCHACAL = 1;
         CTSUCHACAH = 0;
+  #if BSP_MCU_GROUP_RL78F25
+  #else
         CTSUCHACBL = 0;
-        
+  #endif
+
         /* Step3 : Measure by inputting each constant current from internal DAC to ICO. */
         CTSUCRBH  &= ~CTSUCRB_SSCNT_Msk;
         CTSUDBGR1 &= ~CTSUCALIB_CCOCLK_Msk;
@@ -3832,11 +4665,17 @@ void ctsu_correction_scan_start (void)
  #if (CTSU_CFG_TEMP_CORRECTION_TS < 16)
         CTSUCHACAL = (uint16_t) (1 << CTSU_CFG_TEMP_CORRECTION_TS);
         CTSUCHACAH = 0;
+  #if BSP_MCU_GROUP_RL78F25
+  #else
         CTSUCHACBL = 0;
+  #endif
  #elif (CTSU_CFG_TEMP_CORRECTION_TS >= 16) && (CTSU_CFG_TEMP_CORRECTION_TS < 32)
         CTSUCHACAL = 0;
         CTSUCHACAH = (uint16_t) (1 << (CTSU_CFG_TEMP_CORRECTION_TS - 16));
+  #if BSP_MCU_GROUP_RL78F25
+  #else
         CTSUCHACBL = 0;
+  #endif
  #else
         CTSUCHACAL = 0;
         CTSUCHACAH = 0;
@@ -3927,6 +4766,13 @@ void ctsu_correction_data_get (ctsu_instance_ctrl_t * const p_instance_ctrl, uin
             }
         }
 
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+        /* Initialization of sensor counter auto correction table register number */
+        CTSUOPTH &= 0xFFF0U;        /* SCACTB = 0 */
+
+        ctsu_auto_correction_register_set(p_instance_ctrl);
+  #endif
+
         g_ctsu_correction_info.update_counter = 0;
   #if (CTSU_CFG_CALIB_RTRIM_SUPPORT == 1)
         ctsu_correction_calib_rtrim(p_instance_ctrl, p_data);
@@ -3953,21 +4799,7 @@ void ctsu_correction_calib_rtrim (ctsu_instance_ctrl_t * const p_instance_ctrl, 
     int16_t      dir  = 0;
     uint16_t     comp = 0;
 
-    ADCEN = 1U;  /* supply AD clock */
-    ADM0 = 0x00; /* disable AD conversion and clear ADM0 register */
-    ADMK = 1U;   /* disable INTAD interrupt */
-    ADIF = 0U;   /* clear INTAD interrupt flag */
-    ///* The reset status of ADPC is analog input, so it's unnecessary to set. */
-    ADM0 = 0x00; /* AD_CONVERSION_CLOCK_64 | AD_TIME_MODE_NORMAL_1 | AD_OPERMODE_SELECT */
-    ADM1 = 0x20; /* AD_TRIGGER_SOFTWARE | AD_CONVMODE_ONESELECT */
-#if BSP_MCU_GROUP_RL78G22
-    ADM2 = 0x00; /* AD_POSITIVE_VDD | AD_NEGATIVE_VSS | AD_AREA_MODE_1 | AD_RESOLUTION_10BIT */
-#else
-    ADM2 = 0x02; /* AD_POSITIVE_VDD | AD_NEGATIVE_VSS | AD_AREA_MODE_1 | AD_RESOLUTION_12BIT */
-#endif
-    ADUL = 0xFF; /* AD_ADUL_VALUE */
-    ADLL = 0x00; /* AD_ADLL_VALUE */
-    ADS = 0x1E;  /* CH30 */
+    ctsu_adc_init();
 
     /* Self single scan mode */
     CTSUCRAH |= 1 << CTSUCRA_LOAD_Pos;
@@ -3976,19 +4808,22 @@ void ctsu_correction_calib_rtrim (ctsu_instance_ctrl_t * const p_instance_ctrl, 
     CTSUCRAH &= ~CTSUCRA_MD2_Msk;
 
     /* Set Channel */
-  #if (CTSU_CFG_TEMP_CORRECTION_TS < 16)
+   #if (CTSU_CFG_TEMP_CORRECTION_TS < 16)
       CTSUCHACAL = (uint16_t) (1 << CTSU_CFG_TEMP_CORRECTION_TS);
       CTSUCHACAH = 0;
+    #if BSP_MCU_GROUP_RL78F25
+    #else
       CTSUCHACBL = 0;
-  #elif (CTSU_CFG_TEMP_CORRECTION_TS >= 16) && (CTSU_CFG_TEMP_CORRECTION_TS < 32)
+    #endif
+   #elif (CTSU_CFG_TEMP_CORRECTION_TS >= 16) && (CTSU_CFG_TEMP_CORRECTION_TS < 32)
       CTSUCHACAL = 0;
       CTSUCHACAH = (uint16_t) (1 << (CTSU_CFG_TEMP_CORRECTION_TS - 16));
       CTSUCHACBL = 0;
-  #else
+   #else
       CTSUCHACAL = 0;
       CTSUCHACAH = 0;
       CTSUCHACBL = (uint16_t) (1 << (CTSU_CFG_TEMP_CORRECTION_TS - 32));
-  #endif
+   #endif
       CTSUMCH0 = CTSU_CFG_TEMP_CORRECTION_TS;
 
     /* 150uA current measurement */
@@ -4004,29 +4839,43 @@ void ctsu_correction_calib_rtrim (ctsu_instance_ctrl_t * const p_instance_ctrl, 
         adctdr_sum = 0;
         for (i = 0; i < CTSU_CALIB_AVERAGE_TIME; i++)
         {
-#if BSP_MCU_GROUP_RL78G22
+   #if BSP_MCU_GROUP_RL78G22
             ADCE = 1U;
             ctsu_delay(1);
             ADIF = 0;
-#endif
+   #endif
+   #if BSP_MCU_GROUP_RL78F25
+            ADWINR = 0x00U;
+            ADCSR |= 0x8000U;
+   #else
             ADCS = 1;
+   #endif
 
             /* Wait for conversion to complete. */
-#if BSP_MCU_GROUP_RL78G22
+   #if BSP_MCU_GROUP_RL78G22
             while (0 == ADIF)
             {
             }
-#else
+   #elif BSP_MCU_GROUP_RL78F25
+            ADWINR = 0x00U;
+
+            while (0 != (ADCSR & 0x8000U))
+            {
+            }
+   #else
             while (1 == ADCS)
             {
             }
-#endif
+   #endif
 
-#if BSP_MCU_GROUP_RL78G22
+   #if BSP_MCU_GROUP_RL78G22
             adctdr_sum += ((ADCR >> 6) & 0x3FF);
-#else
+   #elif BSP_MCU_GROUP_RL78F25
+            ADWINR      = 0x05U;
+            adctdr_sum += ADDR29;
+   #else
             adctdr_sum += ADCR;
-#endif
+   #endif
         }
 
         adctdr_ave = (uint16_t) ((adctdr_sum * 10) / CTSU_CALIB_AVERAGE_TIME);
@@ -4077,6 +4926,7 @@ void ctsu_correction_calib_rtrim (ctsu_instance_ctrl_t * const p_instance_ctrl, 
  #endif
 #endif
 
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
 /***********************************************************************************************************************
  * ctsu_correction_calc
  ***********************************************************************************************************************/
@@ -4232,6 +5082,7 @@ void ctsu_correction_calc (uint16_t * correction_data, uint16_t raw_data, ctsu_c
         }
 
         answer = (uint32_t) (y0 - (((y0 - y1) * (x0 - raw_data)) / (x0 - x1)));
+
 #endif
 
         /* Value Overflow Check */
@@ -4249,25 +5100,36 @@ void ctsu_correction_calc (uint16_t * correction_data, uint16_t raw_data, ctsu_c
         *correction_data = raw_data;
     }
 }
+#endif
 
 /***********************************************************************************************************************
  * ctsu_correction_exec
  ***********************************************************************************************************************/
 void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
 {
+#if (BSP_FEATURE_CTSU_VERSION == 1)
+    ctsu_correction_ctsu1_exec(p_instance_ctrl);
+#endif
+#if (BSP_FEATURE_CTSU_VERSION == 2)
+    ctsu_correction_ctsu2_exec(p_instance_ctrl);
+#endif
+}
+
+#if (BSP_FEATURE_CTSU_VERSION == 1)
+void ctsu_correction_ctsu1_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
     uint16_t element_id;
 
     ctsu_correction_calc_t calc;
-#if (BSP_FEATURE_CTSU_VERSION == 1)
  #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
     ctsu_data_t * p_self_data;
-    ctsu_data_t   average_self;
+    ctsu_data_t   average_self = {0, 0};
  #endif
  #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
     ctsu_data_t * p_pri_data;
     ctsu_data_t * p_snd_data;
-    ctsu_data_t   average_pri;
-    ctsu_data_t   average_snd;
+    ctsu_data_t   average_pri = {0, 0};
+    ctsu_data_t   average_snd = {0, 0};
  #endif
 
     for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
@@ -4283,7 +5145,6 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
                                  (p_instance_ctrl->p_self_raw + element_id)->sen,
                                  &calc);
             p_self_data->int_data = *(p_instance_ctrl->p_self_corr + element_id);
-
             if (1 < p_instance_ctrl->average)
             {
                 ctsu_moving_average(&average_self, p_self_data->int_data, p_instance_ctrl->average);
@@ -4299,11 +5160,9 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
             average_pri = *p_pri_data;
             average_snd = *p_snd_data;
             ctsu_correction_calc((p_instance_ctrl->p_mutual_pri_corr + element_id),
-                                 (p_instance_ctrl->p_mutual_raw + element_id)->pri_sen,
-                                 &calc);
+                                 (p_instance_ctrl->p_mutual_raw + element_id)->pri_sen, &calc);
             ctsu_correction_calc((p_instance_ctrl->p_mutual_snd_corr + element_id),
-                                 (p_instance_ctrl->p_mutual_raw + element_id)->snd_sen,
-                                 &calc);
+                                 (p_instance_ctrl->p_mutual_raw + element_id)->snd_sen, &calc);
             p_pri_data->int_data = *(p_instance_ctrl->p_mutual_pri_corr + element_id);
             p_snd_data->int_data = *(p_instance_ctrl->p_mutual_snd_corr + element_id);
 
@@ -4317,14 +5176,22 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
         }
  #endif
     }
+}
+
 #endif
 
 #if (BSP_FEATURE_CTSU_VERSION == 2)
+void ctsu_correction_ctsu2_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    uint16_t                element_id;
+    ctsu_correction_calc_t  calc;
     uint16_t                i;
     uint32_t                ctsuso;
     uint32_t                snum;
     int32_t                 offset_unit;
+    uint16_t                majority_mode_element_num;
     ctsu_correction_multi_t multi;
+
  #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
     ctsu_data_t * p_self_data;
     ctsu_data_t   average_self;
@@ -4365,6 +5232,16 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
     }
   #endif
  #endif
+ #if (CTSU_CFG_MAJORITY_MODE & CTSU_JUDGEMENT_MAJORITY_MODE)
+    if (1 == p_instance_ctrl->p_ctsu_cfg->majority_mode)
+    {
+        majority_mode_element_num = CTSU_MAJORITY_MODE_ELEMENTS;
+    }
+    else
+ #endif
+    {
+        majority_mode_element_num = 1;
+    }
     calc.range = p_instance_ctrl->range;
     calc.md    = p_instance_ctrl->md;
 
@@ -4387,36 +5264,54 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
  #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
             for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
             {
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
                 ctsu_correction_calc(&p_instance_ctrl->p_self_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i],
                                      p_instance_ctrl->p_self_raw[(element_id * CTSU_CFG_NUM_SUMULTI) + i],
                                      &calc);
+  #else
+                p_instance_ctrl->p_self_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i] =
+                    p_instance_ctrl->p_self_raw[(element_id * CTSU_CFG_NUM_SUMULTI) + i];
+  #endif
 
                 multi.pri[i] = p_instance_ctrl->p_self_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i];
 
                 multi.snd[i] = 0;
             }
 
-            p_self_data = (p_instance_ctrl->p_self_data + element_id);
-
-            if (0 == p_instance_ctrl->average)
+            for (i = 0; i < majority_mode_element_num; i++)
             {
-                /* Store corrected data in p_pri_data[i] for initial offset tuning */
-            }
-            else
-            {
-                /* Store last moving averaged data */
-                average_self.int_data = p_self_data->int_data;
-                average_self.decimal_point_data = p_self_data->decimal_point_data;
+                p_self_data = (p_instance_ctrl->p_self_data + (element_id * majority_mode_element_num) + i);
 
-                /* Matching values */
-                ctsu_correction_fleq(&multi, multi.pri, NULL);
-                ctsu_correction_multi(&multi, &(p_self_data->int_data), NULL);
+                if (0 == p_instance_ctrl->average)
+                {
+                    /* Store corrected data in p_pri_data[i] for initial offset tuning */
+                }
+                else
+                {
+                    /* Store last moving averaged data */
+                    average_self.int_data           = p_self_data->int_data;
+                    average_self.decimal_point_data = p_self_data->decimal_point_data;
+  #if (CTSU_CFG_MAJORITY_MODE & CTSU_JUDGEMENT_MAJORITY_MODE)
+                    if (p_instance_ctrl->p_ctsu_cfg->majority_mode == 1)
+                    {
+                        /* Skip the ctsu_correction_multi at Software JMM */
+                        p_self_data->int_data = multi.pri[i];
+                    }
+                    else
+  #endif
+                    {
+                        /* Matching values */
+  #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 0)
+                        ctsu_correction_freq(&multi, multi.pri, NULL);
+  #endif
+                        ctsu_correction_multi(&multi, &(p_self_data->int_data), NULL);
+                        *(p_instance_ctrl->p_selected_freq_self + element_id) = multi.selected_freq;
+                    }
 
-                *(p_instance_ctrl->p_selected_freq_self + element_id) = multi.selected_freq;
-
-                /* Update moving averaged data */
-                ctsu_moving_average(&average_self, p_self_data->int_data, p_instance_ctrl->average);
-                *p_self_data = average_self;
+                    /* Update moving averaged data */
+                    ctsu_moving_average(&average_self, p_self_data->int_data, p_instance_ctrl->average);
+                    *p_self_data = average_self;
+                }
             }
         }
         else if (CTSU_MODE_CURRENT_SCAN == p_instance_ctrl->md)
@@ -4427,7 +5322,11 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
             average_self = *p_self_data;
 
             /* Correction */
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
             ctsu_correction_calc(&(p_self_data->int_data), p_instance_ctrl->p_self_raw[element_id], &calc);
+  #else
+            p_self_data->int_data = p_instance_ctrl->p_self_raw[element_id];
+  #endif
 
             /* Update moving averaged data */
             if (1 < p_instance_ctrl->average)
@@ -4442,42 +5341,95 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
  #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
             for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
             {
+                if (true == p_instance_ctrl->serial_tuning_enable)
+                {
+                    if ((0 == p_instance_ctrl->ctsuchtrc0) && (0 == p_instance_ctrl->ctsuchtrc1) &&
+                        (0 == p_instance_ctrl->ctsuchtrc2) && (0 == p_instance_ctrl->ctsuchtrc3) &&
+                        (0 == p_instance_ctrl->ctsuchtrc4))
+                    {
+                        /* Serial tuning Phase1 */
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
+                        ctsu_correction_calc(&p_instance_ctrl->p_mutual_pri_corr[element_id],
+                                     p_instance_ctrl->p_mutual_raw[element_id * CTSU_CFG_NUM_SUMULTI],
+                                     &calc);
+  #else
+                        p_instance_ctrl->p_mutual_pri_corr[element_id] =
+                            p_instance_ctrl->p_mutual_raw[element_id * CTSU_CFG_NUM_SUMULTI];
+  #endif
+                        break;
+                    }
+                }
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
                 ctsu_correction_calc(&p_instance_ctrl->p_mutual_pri_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i],
                                      p_instance_ctrl->p_mutual_raw[(element_id * CTSU_MUTUAL_BUF_SIZE) + (i * 2)],
                                      &calc);
+  #else
+                p_instance_ctrl->p_mutual_pri_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i] =
+                    p_instance_ctrl->p_mutual_raw[(element_id * CTSU_MUTUAL_BUF_SIZE) + (i * 2)];
+  #endif
 
                 multi.pri[i] = p_instance_ctrl->p_mutual_pri_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i];
 
+  #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
                 ctsu_correction_calc(&p_instance_ctrl->p_mutual_snd_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i],
                                      p_instance_ctrl->p_mutual_raw[(element_id * CTSU_MUTUAL_BUF_SIZE) + (i * 2) + 1],
                                      &calc);
+  #else
+                p_instance_ctrl->p_mutual_snd_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i] =
+                    p_instance_ctrl->p_mutual_raw[(element_id * CTSU_MUTUAL_BUF_SIZE) + (i * 2) + 1];
+  #endif
 
                 multi.snd[i] = p_instance_ctrl->p_mutual_snd_corr[(element_id * CTSU_CFG_NUM_SUMULTI) + i];
             }
 
-            p_pri_data = (p_instance_ctrl->p_mutual_pri_data + element_id);
-            p_snd_data = (p_instance_ctrl->p_mutual_snd_data + element_id);
-
-            if (0 == p_instance_ctrl->average)
+            for (i = 0; i < majority_mode_element_num; i++)
             {
-                /* Store corrected data in p_pri_data[i] for initial offset tuning */
-            }
-            else
-            {
-                /* Store last moving averaged data */
-                average_pri = *p_pri_data;
-                average_snd = *p_snd_data;
+                if (true == p_instance_ctrl->serial_tuning_enable)
+                {
+                    /* Serial Tuning Phase1 */
+                    if ((0 == p_instance_ctrl->ctsuchtrc0) && (0 == p_instance_ctrl->ctsuchtrc1) &&
+                        (0 == p_instance_ctrl->ctsuchtrc2) && (0 == p_instance_ctrl->ctsuchtrc3) &&
+                        (0 == p_instance_ctrl->ctsuchtrc4))
+                    {
+                        break;
+                    }
+                }
+                p_pri_data = (p_instance_ctrl->p_mutual_pri_data + (element_id * majority_mode_element_num) + i);
+                p_snd_data = (p_instance_ctrl->p_mutual_snd_data + (element_id * majority_mode_element_num) + i);
 
-                /* Matching values */
-                ctsu_correction_fleq(&multi, multi.pri, multi.snd);
-                ctsu_correction_multi(&multi, &(p_pri_data->int_data), &(p_snd_data->int_data));
-                *(p_instance_ctrl->p_selected_freq_mutual + element_id) = multi.selected_freq;
+                if (0 == p_instance_ctrl->average)
+                {
+                    /* Store corrected data in p_pri_data[i] for initial offset tuning */
+                }
+                else
+                {
+                    /* Store last moving averaged data */
+                    average_pri = *p_pri_data;
+                    average_snd = *p_snd_data;
+  #if (CTSU_CFG_MAJORITY_MODE & CTSU_JUDGEMENT_MAJORITY_MODE)
+                    if (p_instance_ctrl->p_ctsu_cfg->majority_mode == 1)
+                    {
+                        /* Skip the ctsu_correction_multi at Software JMM */
+                        p_pri_data->int_data = multi.pri[i];
+                        p_snd_data->int_data = multi.snd[i];
+                    }
+                    else
+  #endif
+                    {
+                        /* Matching values */
+  #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 0)
+                        ctsu_correction_freq(&multi, multi.pri, multi.snd);
+  #endif
+                        ctsu_correction_multi(&multi, &(p_pri_data->int_data), &(p_snd_data->int_data));
+                        *(p_instance_ctrl->p_selected_freq_mutual + element_id) = multi.selected_freq;
+                    }
 
-                /* Update moving averaged data */
-                ctsu_moving_average(&average_pri, p_pri_data->int_data, p_instance_ctrl->average);
-                *p_pri_data = average_pri;
-                ctsu_moving_average(&average_snd, p_snd_data->int_data, p_instance_ctrl->average);
-                *p_snd_data = average_snd;
+                    /* Update moving averaged data */
+                    ctsu_moving_average(&average_pri, p_pri_data->int_data, p_instance_ctrl->average);
+                    *p_pri_data = average_pri;
+                    ctsu_moving_average(&average_snd, p_snd_data->int_data, p_instance_ctrl->average);
+                    *p_snd_data = average_snd;
+                }
             }
  #endif
         }
@@ -4527,7 +5479,7 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
                 /* Store corrected data in p_pri_data[i] for initial offset tuning */
                 for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
                 {
-                    p_pri_data[i] = multi.pri[i];
+                    p_pri_data[i].int_data = multi.pri[i];
                 }
             }
             else
@@ -4538,13 +5490,13 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
 
                 /* Matching values */
                 ctsu_correction_fleq(&multi, multi.pri, multi.snd);
-                ctsu_correction_multi(&multi, p_pri_data, p_snd_data);
+                ctsu_correction_multi(&multi, &(p_pri_data->int_data), &(p_snd_data->int_data));
                 *(p_instance_ctrl->p_selected_freq_mutual + element_id) = multi.selected_freq;
 
                 /* Update moving averaged data */
-                ctsu_moving_average(&average_pri, *p_pri_data, p_instance_ctrl->average);
+                ctsu_moving_average(&average_pri, p_pri_data->int_data, p_instance_ctrl->average);
                 *p_pri_data = average_pri;
-                ctsu_moving_average(&average_snd, *p_snd_data, p_instance_ctrl->average);
+                ctsu_moving_average(&average_snd, p_snd_data->int_data, p_instance_ctrl->average);
                 *p_snd_data = average_snd;
             }
   #endif
@@ -4554,15 +5506,15 @@ void ctsu_correction_exec (ctsu_instance_ctrl_t * const p_instance_ctrl)
         {
         }
     }
-#endif
 }
 
+#endif
 #if (BSP_FEATURE_CTSU_VERSION == 2)
-
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 0)
 /***********************************************************************************************************************
- * ctsu_correction_multi
+ * ctsu_correction_freq
  ***********************************************************************************************************************/
-void ctsu_correction_fleq (ctsu_correction_multi_t * p_multi, uint16_t * p_pri, uint16_t * p_snd)
+void ctsu_correction_freq (ctsu_correction_multi_t * p_multi, uint16_t * p_pri, uint16_t * p_snd)
 {
     uint32_t i;
     int32_t  sumulti[CTSU_CFG_NUM_SUMULTI];
@@ -4603,7 +5555,11 @@ void ctsu_correction_fleq (ctsu_correction_multi_t * p_multi, uint16_t * p_pri, 
         }
     }
 }
+ #endif
 
+/***********************************************************************************************************************
+ * ctsu_correction_multi
+ ***********************************************************************************************************************/
 void ctsu_correction_multi (ctsu_correction_multi_t * p_multi, uint16_t * p_pri, uint16_t * p_snd)
 {
     int32_t  add_pri;
@@ -4987,90 +5943,64 @@ void ctsu_sms_parameter_init (ctsu_instance_ctrl_t * const p_instance_ctrl,
 {
     uint16_t element;
     uint16_t multi;
-    uint16_t ratio;
+    int16_t threshold_l;
+    int16_t threshold_h;
+    int32_t int_data;
 
     /* Set CTSU Threshold Data & Sensor Parameter & Initial moving Average data */
     for (element = 0; element < p_instance_ctrl->num_elements; element++)
     {
         for (multi = 0; multi < CTSU_CFG_NUM_SUMULTI; multi++)
         {
-        /* ratio=SUMULTIn/SUMULTI0 */
-            if (multi == 1) ratio = (uint16_t) (((uint32_t) (CTSU_CFG_SUMULTI1 + 1) << 12) / (CTSU_CFG_SUMULTI0 + 1));
-            else if (multi == 2) ratio = (uint16_t) (((uint32_t) (CTSU_CFG_SUMULTI2 + 1) << 12) / (CTSU_CFG_SUMULTI0 + 1));
-            else ratio = 1 << 12;
-
-            /* Store Threshold Data */
-#if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
+ #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
             if (CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->md)
             {
-                g_ctsu_sms_threshold[element][multi].threshold_l = (int16_t)((((int32_t)(p_threshold[element] - p_hysteresis[element]) >> 1) * ratio)>>12);
-                g_ctsu_sms_threshold[element][multi].threshold_h = (int16_t)((((int32_t)(p_threshold[element]) >> 1) * ratio)>>12);
+                threshold_l = p_threshold[(element * CTSU_MAJORITY_MODE_ELEMENTS) + multi] -
+                              p_hysteresis[(element * CTSU_MAJORITY_MODE_ELEMENTS) + multi];
+                threshold_h = p_threshold[(element * CTSU_MAJORITY_MODE_ELEMENTS) + multi];
             }
-#endif
-#if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+ #endif
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
             if (CTSU_MODE_MUTUAL_FULL_SCAN == p_instance_ctrl->md)
             {
-                g_ctsu_sms_threshold[element][multi].threshold_l = -1 * (int16_t)((((int32_t)(p_threshold[element] - p_hysteresis[element]) >> 1) * ratio)>>12);
-                g_ctsu_sms_threshold[element][multi].threshold_h = -1 * (int16_t)((((int32_t)(p_threshold[element]) >> 1) * ratio)>>12);
+                threshold_l = -(p_threshold[(element * CTSU_MAJORITY_MODE_ELEMENTS) + multi] -
+                                p_hysteresis[(element * CTSU_MAJORITY_MODE_ELEMENTS) + multi]);
+                threshold_h = -(p_threshold[(element * CTSU_MAJORITY_MODE_ELEMENTS) + multi]);
             }
-#endif
+ #endif
+            g_ctsu_sms_threshold[element][multi].threshold_l = threshold_l;
+            g_ctsu_sms_threshold[element][multi].threshold_h = threshold_h;
 
             /* Store CTSUSO Parameter */
             g_ctsu_sms_ctsuwr[element][multi].so0 = (uint16_t) p_instance_ctrl->p_ctsuwr[(element * CTSU_CFG_NUM_SUMULTI) + multi].ctsuso;
             g_ctsu_sms_ctsuwr[element][multi].so1 = (uint16_t) (p_instance_ctrl->p_ctsuwr[(element * CTSU_CFG_NUM_SUMULTI) + multi].ctsuso >> 16);
 
             /* Set Initial moving average, the others are set 0 */
-#if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
+ #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
             if (CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->md)
-                if (CTSU_CFG_NUM_SUMULTI == 1)
-                {
-                    g_ctsu_sms_result[element][multi].ajmmarl = 0;
-                    g_ctsu_sms_result[element][multi].ajmmarh = g_ctsu_self_data[element].int_data;
-                    g_ctsu_sms_result[element][multi].ajblactl = 0;
-                    g_ctsu_sms_result[element][multi].ajblacth = 0;
-                    g_ctsu_sms_result[element][multi].ajblarl = 0;
-                    g_ctsu_sms_result[element][multi].ajblarh = g_ctsu_self_data[element].int_data;
-                    g_ctsu_sms_result[element][multi].ajrrl = 0;
-                    g_ctsu_sms_result[element][multi].sjccr = CTSU_SET_HI(count_filter);
-                }
-                else
-                {
-                    g_ctsu_sms_result[element][multi].ajmmarl = 0;
-                    g_ctsu_sms_result[element][multi].ajmmarh = g_ctsu_self_data[element].int_data / 2;
-                    g_ctsu_sms_result[element][multi].ajblactl = 0;
-                    g_ctsu_sms_result[element][multi].ajblacth = 0;
-                    g_ctsu_sms_result[element][multi].ajblarl = 0;
-                    g_ctsu_sms_result[element][multi].ajblarh = g_ctsu_self_data[element].int_data / 2;
-                    g_ctsu_sms_result[element][multi].ajrrl = 0;
-                    g_ctsu_sms_result[element][multi].sjccr = CTSU_SET_HI(count_filter);
-                }
-#endif
-#if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+            {
+                int_data = (p_instance_ctrl->p_self_data + (element * CTSU_MAJORITY_MODE_ELEMENTS) + multi)->int_data;
+            }
+ #endif
+ #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
             if (CTSU_MODE_MUTUAL_FULL_SCAN == p_instance_ctrl->md)
-                if (CTSU_CFG_NUM_SUMULTI == 1)
+            {
+                int_data = (p_instance_ctrl->p_mutual_snd_data + (element * CTSU_MAJORITY_MODE_ELEMENTS) + multi)->int_data -
+                           (p_instance_ctrl->p_mutual_pri_data + (element * CTSU_MAJORITY_MODE_ELEMENTS) + multi)->int_data;
+                if (0 > int_data)
                 {
-                    g_ctsu_sms_result[element][multi].ajmmarl = 0;
-                    g_ctsu_sms_result[element][multi].ajmmarh = (uint16_t)((((uint32_t)(g_ctsu_mutual_snd_data[element].int_data - g_ctsu_mutual_pri_data[element].int_data)) * ratio) >> 12);
-                    g_ctsu_sms_result[element][multi].ajblactl = 0;
-                    g_ctsu_sms_result[element][multi].ajblacth = 0;
-                    g_ctsu_sms_result[element][multi].ajblarl = 0;
-                    g_ctsu_sms_result[element][multi].ajblarh = (uint16_t)((((uint32_t)(g_ctsu_mutual_snd_data[element].int_data - g_ctsu_mutual_pri_data[element].int_data)) * ratio) >> 12);
-                    g_ctsu_sms_result[element][multi].ajrrl = 0;
-                    g_ctsu_sms_result[element][multi].sjccr = CTSU_SET_HI(count_filter);
+                    int_data = 0;
                 }
-                else
-                {
-                    g_ctsu_sms_result[element][multi].ajmmarl = 0;
-                    g_ctsu_sms_result[element][multi].ajmmarh = (uint16_t)((((uint32_t)(g_ctsu_mutual_snd_data[element].int_data - g_ctsu_mutual_pri_data[element].int_data) / 2) * ratio) >> 12);
-                    g_ctsu_sms_result[element][multi].ajblactl = 0;
-                    g_ctsu_sms_result[element][multi].ajblacth = 0;
-                    g_ctsu_sms_result[element][multi].ajblarl = 0;
-                    g_ctsu_sms_result[element][multi].ajblarh = (uint16_t)((((uint32_t)(g_ctsu_mutual_snd_data[element].int_data - g_ctsu_mutual_pri_data[element].int_data) / 2) * ratio) >> 12);
-                    g_ctsu_sms_result[element][multi].ajrrl = 0;
-                    g_ctsu_sms_result[element][multi].sjccr = CTSU_SET_HI(count_filter);
-
-                }
-#endif
+            }
+ #endif
+            g_ctsu_sms_result[element][multi].ajmmarl = 0;
+            g_ctsu_sms_result[element][multi].ajmmarh = (uint16_t) int_data;
+            g_ctsu_sms_result[element][multi].ajblactl = 0;
+            g_ctsu_sms_result[element][multi].ajblacth = 0;
+            g_ctsu_sms_result[element][multi].ajblarl = 0;
+            g_ctsu_sms_result[element][multi].ajblarh = (uint16_t) int_data;
+            g_ctsu_sms_result[element][multi].ajrrl = 0;
+            g_ctsu_sms_result[element][multi].sjccr = CTSU_SET_HI(count_filter);
         }
     }
 }
@@ -5155,13 +6085,9 @@ void ctsu_sms_isr (void)
 #endif
 {
     uint16_t                i;
-    uint32_t                ctsuso;
-    uint32_t                snum;
-    int32_t                 offset_unit;
     ctsu_instance_ctrl_t  * p_instance_ctrl = gp_ctsu_isr_context;
     ctsu_callback_args_t    args;
     uint16_t                element_id;
-    ctsu_correction_multi_t multi;
 
     SMSEMK = 1U;
     SMSEIF = 1U;
@@ -5200,20 +6126,9 @@ void ctsu_sms_isr (void)
         {
             for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
             {
-                ctsuso =
-                    (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + i].ctsuso & CTSU_TUNING_MAX);
-                snum = (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI)].ctsuso >> 10) &
-                       CTSU_SNUM_MAX;
-                offset_unit =
-                    (int32_t) ((CTSU_CORRECTION_OFFSET_UNIT * (snum + 1)) / (CTSU_SNUM_RECOMMEND + 1));
-                multi.offset[i] = (ctsuso * (uint32_t) (offset_unit >> (p_instance_ctrl->range)));
-
-                multi.pri[i] = g_ctsu_sms_result[element_id][i].ajmmarh;
-
-                multi.snd[i] = 0;
+                p_instance_ctrl->p_self_data[(element_id * CTSU_CFG_NUM_SUMULTI) + i].int_data =
+                        g_ctsu_sms_result[element_id][i].ajmmarh;
             }
-            ctsu_correction_fleq(&multi, multi.pri, NULL);
-            ctsu_correction_multi(&multi, &(p_instance_ctrl->p_self_data[element_id].int_data), NULL);
         }
     }
 #endif
@@ -5224,21 +6139,10 @@ void ctsu_sms_isr (void)
         {
             for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
             {
-                ctsuso =
-                    (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + i].ctsuso & CTSU_TUNING_MAX);
-                snum = (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI)].ctsuso >> 10) &
-                       CTSU_SNUM_MAX;
-                offset_unit =
-                    (int32_t) ((CTSU_CORRECTION_OFFSET_UNIT * (snum + 1)) / (CTSU_SNUM_RECOMMEND + 1));
-                multi.offset[i] = (ctsuso * (uint32_t) (offset_unit >> (p_instance_ctrl->range)));
-
-                multi.pri[i] = 0;
-                multi.snd[i] = g_ctsu_sms_result[element_id][i].ajmmarh;
+                p_instance_ctrl->p_mutual_pri_data[(element_id * CTSU_CFG_NUM_SUMULTI) + i].int_data = 0;
+                p_instance_ctrl->p_mutual_snd_data[(element_id * CTSU_CFG_NUM_SUMULTI) + i].int_data =
+                        g_ctsu_sms_result[element_id][i].ajmmarh;
             }
-            ctsu_correction_fleq(&multi, multi.pri, multi.snd);
-            ctsu_correction_multi(&multi,
-                    &(p_instance_ctrl->p_mutual_pri_data[element_id].int_data),
-                    &(p_instance_ctrl->p_mutual_snd_data[element_id]).int_data);
         }
     }
 #endif
@@ -5335,7 +6239,7 @@ void ctsu_sms_elc_init(void)
  #if (CTSU_CFG_NUM_CFC != 0)
 
 /***********************************************************************************************************************
- * ctsu_correction_process
+ * ctsu_corrcfc_process
  ***********************************************************************************************************************/
 void ctsu_corrcfc_process (ctsu_instance_ctrl_t * const p_instance_ctrl)
 {
@@ -5503,6 +6407,218 @@ void ctsu_corrcfc_measurement (ctsu_instance_ctrl_t * const p_instance_ctrl, uin
     }
 }
 
+ #endif
+
+ #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+/***********************************************************************************************************************
+ * ctsu_auto_correction_register_set
+ ***********************************************************************************************************************/
+void ctsu_auto_correction_register_set (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    uint32_t j;
+    uint32_t corr_original;
+    uint8_t  corr_integer;
+    uint16_t corr_decimal;
+    uint16_t corr_dac;
+
+    /* Enter the correction factor and dac_value in CTSUSCNTACT for 12 correction tables */
+    for (j = 0; j < CTSU_CORRECTION_POINT_NUM; j++)
+    {
+        /* The correction coefficient is shifted to the right by 12 bits after the decimal point and treated as an integer. */
+        corr_original = ((uint32_t)g_ctsu_correction_info.ref_value[p_instance_ctrl->range][j] << CTSU_AUTO_DECIMAL_POINT_NUM) / g_ctsu_correction_info.dac_value[j];
+        /* Extract an integer of the correction factor */
+        corr_integer = (corr_original >> CTSU_AUTO_DECIMAL_POINT_NUM) & 0xF;
+        /* Extract a decimal of the correction factor */
+        corr_decimal = corr_original & 0xFFF;
+
+        corr_dac = g_ctsu_correction_info.dac_value[j];
+
+        /* Table 0 is set to 0x0000 and table 11 is set to 0xFFFF */
+        if (0 == j)
+        {
+            corr_dac = 0x0000;
+        }
+        else if ((CTSU_CORRECTION_POINT_NUM - 1) == j)
+        {
+            corr_dac = CTSU_COUNT_MAX;
+        }
+
+        CTSUSCTACTL = ((uint16_t)corr_integer << CTSU_AUTO_DECIMAL_POINT_NUM) | corr_decimal;
+        CTSUSCTACTH = corr_dac;
+    }
+}
+ #endif
+
+ #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+/***********************************************************************************************************************
+* ctsu_multiclock_auto_correction_register_set
+***********************************************************************************************************************/
+static void ctsu_multiclock_auto_correction_register_set (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    uint16_t element_id;
+    uint16_t mostly_constant;
+    int32_t  mcact_coef_int32_1;
+    int16_t  mcact_coef_int16_1;
+    int32_t  mcact_coef_int32_2;
+    int16_t  mcact_coef_int16_2;
+
+    for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
+    {
+        mostly_constant = CTSU_MULTICLOCK_AUTO_CORRECTION_BASE_VALUE * ((p_instance_ctrl->p_ctsu_cfg->p_elements[element_id].snum + 1) / (CTSU_SNUM_RECOMMEND + 1));
+
+        mcact_coef_int32_1 = (((CTSU_CFG_SUMULTI1 + 1) * (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + 1].ctsuso & CTSU_TUNING_MAX) / (CTSU_CFG_SUMULTI0 + 1)) - (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI)].ctsuso & CTSU_TUNING_MAX)) * mostly_constant;
+        mcact_coef_int16_1 = (mcact_coef_int32_1 >> p_instance_ctrl->range) >> 10;
+        mcact_coef_int16_1 = -(mcact_coef_int16_1);
+
+        mcact_coef_int32_2 = (((CTSU_CFG_SUMULTI2 + 1) * (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + 2].ctsuso & CTSU_TUNING_MAX) / (CTSU_CFG_SUMULTI0 + 1)) - (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI)].ctsuso & CTSU_TUNING_MAX)) * mostly_constant;
+        mcact_coef_int16_2 = (mcact_coef_int32_2 >> p_instance_ctrl->range) >> 10;
+        mcact_coef_int16_2 = -(mcact_coef_int16_2);
+
+        if (0 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+        {
+            p_instance_ctrl->p_mcact1[(element_id * CTSU_CFG_NUM_SUMULTI) + 0] = 0;
+            p_instance_ctrl->p_mcact1[(element_id * CTSU_CFG_NUM_SUMULTI) + 1] = ((uint32_t)mcact_coef_int16_1 << 16) | (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + 1].ctsuso & CTSU_TUNING_MAX);
+            p_instance_ctrl->p_mcact1[(element_id * CTSU_CFG_NUM_SUMULTI) + 2] = ((uint32_t)mcact_coef_int16_2 << 16) | (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + 2].ctsuso & CTSU_TUNING_MAX);
+        }
+        else
+        {
+            p_instance_ctrl->p_mcact1[element_id] = ((uint32_t)mcact_coef_int16_1 << 16) | (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + 1].ctsuso & CTSU_TUNING_MAX);
+            p_instance_ctrl->p_mcact2[element_id] = ((uint32_t)mcact_coef_int16_2 << 16) | (p_instance_ctrl->p_ctsuwr[(element_id * CTSU_CFG_NUM_SUMULTI) + 2].ctsuso & CTSU_TUNING_MAX);
+        }
+    }
+
+    /* When using HW VMM, pack and re-store the first frequency settings. The second and third frequencies use mcact. */
+    if (1 == p_instance_ctrl->p_ctsu_cfg->ajfen)
+    {
+        for (element_id = 1; element_id < p_instance_ctrl->num_elements; element_id++)
+        {
+    		p_instance_ctrl->p_ctsuwr[element_id].ctsuso = p_instance_ctrl->p_ctsuwr[element_id * CTSU_CFG_NUM_SUMULTI].ctsuso;
+    	}
+    }
+}
+ #endif
+
+ #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
+/***********************************************************************************************************************
+ * ctsu_auto_judge_threshold_calc
+ ***********************************************************************************************************************/
+void ctsu_auto_judge_threshold_calc (ctsu_instance_ctrl_t * const p_instance_ctrl)
+{
+    uint8_t  element_id;
+    uint8_t  i;
+  #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+    int16_t  ajthr_h;
+    int16_t  ajthr_l;
+  #endif
+
+    for (element_id = 0; element_id < p_instance_ctrl->num_elements; element_id++)
+    {
+  #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
+        if (1 == p_instance_ctrl->p_ctsu_cfg->majirimd)
+        {
+   #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+            if(CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->p_ctsu_cfg->md)
+            {
+   #endif
+                p_instance_ctrl->p_auto_judge[element_id].ajthr = ((uint32_t)p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[element_id].threshold << 16) |
+                    (p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[element_id].threshold - p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[element_id].hysteresis);
+   #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+            }
+            else
+            {
+                ajthr_h = -(p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[element_id].threshold) + p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[element_id].hysteresis;
+                ajthr_l = -(p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[element_id].threshold);
+                p_instance_ctrl->p_auto_judge[element_id].ajthr = ((uint32_t)ajthr_h << 16) | (ajthr_l & 0x0000FFFF);
+            }
+   #endif
+        }
+        else
+  #endif
+        {
+            for (i = 0; i < CTSU_CFG_NUM_SUMULTI; i++)
+            {
+  #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+                if(CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->p_ctsu_cfg->md)
+                {
+  #endif
+                    p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].ajthr =
+                        ((uint32_t)p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].threshold << 16) |
+                        (p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].threshold -
+                         p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].hysteresis);
+  #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
+                }
+                else
+                {
+                    ajthr_h = -(p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].threshold) +
+                        p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].hysteresis;
+                    ajthr_l = -(p_instance_ctrl->p_ctsu_cfg->p_ctsu_auto_buttons[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].threshold);
+                    p_instance_ctrl->p_auto_judge[(element_id * CTSU_MAJORITY_MODE_ELEMENTS) + i].ajthr =
+                        ((uint32_t)ajthr_h << 16) | (ajthr_l & 0x0000FFFF);
+                }
+  #endif
+            }
+        }
+    }
+}
+ #endif
+
+ #if ((CTSU_CFG_TEMP_CORRECTION_SUPPORT == 1) && (CTSU_CFG_CALIB_RTRIM_SUPPORT == 1)) || (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
+/***********************************************************************************************************************
+ * ctsu_adc_init
+ ***********************************************************************************************************************/
+static void ctsu_adc_init(void)
+{
+    ADCEN = 1U;  /* supply AD clock */
+
+  #if BSP_MCU_GROUP_RL78F25
+    ADCKS  = 0x00U;         /* A/D conversion clock no devide setting */
+    ADWINR = 0x00U;         /* Access window setting for the ADCSR register (0) */
+    ADCSR &= (~0x8000U);    /* Stop A/D conversion */
+    ADMK   = 1U;            /* disable INTAD interrupt */
+    ADIF   = 0U;            /* clear INTAD interrupt flag */
+
+    /* Set INTAD low priority (level 3) */
+    ADPR1  = 1U;
+    ADPR0  = 1U;
+
+    /* Set transition analog block to operation mode */
+    ADWINR = 0x08U;
+    ADSLP  = 0U;    /* Normal operation mode */
+
+    ctsu_delay(1U); /* wait for 1uS */
+
+    /* AD configuration */
+    ADWINR      = 0x00U;    /* Access window setting for the ADCSR register (0) */
+    ADCSR       = 0x1000U;  /* Single scan mode, started by trigger disable and scan end interrupt enable */
+    ADWINR      = 0x00U;    /* Access window setting for the ADANSA1 register (0) */
+    ADANSA1     = 0x2000U;  /* ANI29 (TSCAP) used */
+    ADWINR      = 0x08U;    /* Access window setting for the ADHVREFCNT register (8) */
+    ADHVREFCNT |= 0x11U;    /* AVREFM and AVREFP are selected */
+    ADWINR      = 0x00U;    /* Access window setting for the ADCER register (0) */
+    ADCER       = 0x0000U;  /* Right aligned is selected, self-diag disable and auto clearing disable */
+    ADWINR      = 0x07U;    /* Access window setting for the ADDISCR register (7) */
+    ADDISCR     = 0x00U;    /* Disables the disconnection detection assist function */
+    ADWINR      = 0x00U;    /* Access window setting for the ADADC register (0) */
+    ADADC       = 0x00U;    /* Addition mode is selected and 1-time conversion */
+    ADWINR      = 0x00U;    /* Access window setting for the ADSSTRL register (0) */
+    ADSSTRL     = 0x20U;    /* Sampling time for ANI16-ANI29 setting */
+  #else
+    ADM0 = 0x00U;   /* disable AD conversion and clear ADM0 register */
+    ADMK = 1U;      /* disable INTAD interrupt */
+    ADIF = 0U;      /* clear INTAD interrupt flag */
+    ///* The reset status of ADPC is analog input, so it's unnecessary to set. */
+    ADM0 = 0x00U;   /* AD_CONVERSION_CLOCK_64 | AD_TIME_MODE_NORMAL_1 | AD_OPERMODE_SELECT */
+    ADM1 = 0x20U;   /* AD_TRIGGER_SOFTWARE | AD_CONVMODE_ONESELECT */
+   #if BSP_MCU_GROUP_RL78G22
+    ADM2 = 0x00U;   /* AD_POSITIVE_VDD | AD_NEGATIVE_VSS | AD_AREA_MODE_1 | AD_RESOLUTION_10BIT */
+   #else
+    ADM2 = 0x02U;   /* AD_POSITIVE_VDD | AD_NEGATIVE_VSS | AD_AREA_MODE_1 | AD_RESOLUTION_12BIT */
+   #endif
+    ADUL = 0xFFU;   /* AD_ADUL_VALUE */
+    ADLL = 0x00U;   /* AD_ADLL_VALUE */
+    ADS  = 0x1EU;   /* CH30 */
+  #endif
+}
  #endif
 #endif
 
@@ -5846,10 +6962,10 @@ static fsp_err_t ctsu_diag_data_get1 (void)
         else
         {
             g_ctsu_diag_info.loop_count++;
-            if (6U <= g_ctsu_diag_info.loop_count)
+            if (6 <= g_ctsu_diag_info.loop_count)
             {
                 g_ctsu_diag_info.state      = CTSU_DIAG_COMPLETE;
-                g_ctsu_diag_info.loop_count = 0U;
+                g_ctsu_diag_info.loop_count = 0;
             }
         }
   #endif
@@ -5874,7 +6990,7 @@ static fsp_err_t ctsu_diag_data_get1 (void)
     CTSUCHTRC2   = g_ctsu_diag_reg.ctsuchtrc2;
 #endif
     CTSUDCLKC    = g_ctsu_diag_reg.ctsudclkc;
-    CTSUERRS     = 0U;
+    CTSUERRS     = 0;
 
     if (CTSU_DIAG_COMPLETE == g_ctsu_diag_info.state)
     {
@@ -6133,18 +7249,18 @@ static void ctsu_diag_oscillator_high_scan_start (void)
     pclkb_mhz = R_BSP_GetFclkFreqHz() / CTSU_PCLKB_FREQ_MHZ;
     if (CTSU_PCLKB_FREQ_RANGE1 >= pclkb_mhz)
     {
-        CTSUCR1 |= (0 << 4);
-        ctsu_sdpa          = pclkb_mhz - 1;
+        CTSUCR1  |= (0 << 4);
+        ctsu_sdpa = pclkb_mhz - 1;
     }
     else if ((CTSU_PCLKB_FREQ_RANGE1 < pclkb_mhz) && (CTSU_PCLKB_FREQ_RANGE2 >= pclkb_mhz))
     {
-        CTSUCR1 |= (1 << 4);
-        ctsu_sdpa          = (pclkb_mhz / 2) - 1;
+        CTSUCR1  |= (1 << 4);
+        ctsu_sdpa = (pclkb_mhz / 2) - 1;
     }
     else
     {
-        CTSUCR1 |= (2 << 4);
-        ctsu_sdpa          = (pclkb_mhz / 4) - 1;
+        CTSUCR1  |= (2 << 4);
+        ctsu_sdpa = (pclkb_mhz / 4) - 1;
     }
 
     CTSUCR1   |= (CTSU_MODE_SELF_MULTI_SCAN << 6);
@@ -6225,18 +7341,18 @@ static void ctsu_diag_oscillator_low_scan_start (void)
     pclkb_mhz = R_BSP_GetFclkFreqHz() / CTSU_PCLKB_FREQ_MHZ;
     if (CTSU_PCLKB_FREQ_RANGE1 >= pclkb_mhz)
     {
-        CTSUCR1 |= (0 << 4);
-        ctsu_sdpa          = pclkb_mhz - 1;
+        CTSUCR1  |= (0 << 4);
+        ctsu_sdpa = pclkb_mhz - 1;
     }
     else if ((CTSU_PCLKB_FREQ_RANGE1 < pclkb_mhz) && (CTSU_PCLKB_FREQ_RANGE2 >= pclkb_mhz))
     {
-        CTSUCR1 |= (1 << 4);
-        ctsu_sdpa          = (pclkb_mhz / 2) - 1;
+        CTSUCR1  |= (1 << 4);
+        ctsu_sdpa = (pclkb_mhz / 2) - 1;
     }
     else
     {
-        CTSUCR1 |= (2 << 4);
-        ctsu_sdpa          = (pclkb_mhz / 4) - 1;
+        CTSUCR1  |= (2 << 4);
+        ctsu_sdpa = (pclkb_mhz / 4) - 1;
     }
 
     CTSUCR1   |= (CTSU_MODE_SELF_MULTI_SCAN << 6);
@@ -6530,7 +7646,7 @@ static void ctsu_diag_dac_woTS_scan_start(void)
         adc_value >>= 2U;
 
         /* Read A/D data then scan normal end */
-        g_ctsu_diag_info.dac_voltage_value[k] = ((uint32_t)adc_value * CTSU_CFG_VCC_MV) / 4095UL;
+        g_ctsu_diag_info.dac_voltage_value[k] = (uint16_t)(((uint32_t)adc_value * CTSU_CFG_VCC_MV) / 4095UL);
     }
 
     /* ADC Close */
@@ -6623,7 +7739,7 @@ static void ctsu_diag_dac_initial_tuning (void)
 
     if (CTSU_CFG_NUM_SUMULTI == complete_flag)
     {
-        g_ctsu_diag_info.tuning_diff = CTSU_TUNING_OT_COUNT;
+        g_ctsu_diag_info.tuning_diff = 0;
         g_ctsu_diag_info.so0_4uc_val = ctsuso;
         g_ctsu_diag_info.dac_init    = 3;
         g_ctsu_diag_info.tuning      = CTSU_TUNING_COMPLETE;
@@ -6985,9 +8101,15 @@ static void ctsu_diag_regi_store2 (void)
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsucra    , CTSUCRAH    , CTSUCRAL   ); // add.LONG [Diagnosis]
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsucrb    , CTSUCRBH    , CTSUCRBL   );
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchaca  , CTSUCHACAH  , CTSUCHACAL );
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchacb  , CTSUCHACBH  , CTSUCHACBL );
+#endif
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchtrca , CTSUCHTRCAH , CTSUCHTRCAL);
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchtrcb , CTSUCHTRCBH , CTSUCHTRCBL);
+#endif
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsumch    , CTSUMCHH    , CTSUMCHL   );
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsucalib  , CTSUDBGR1   , CTSUDBGR0  );
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsusuclka , CTSUSUCLK1  , CTSUSUCLK0 );
@@ -7000,9 +8122,15 @@ static void ctsu_diag_regi_restore2 (void)
     CTSU_LWORD_GET(CTSUCRAH    , CTSUCRAL    , g_ctsu_diag_reg.ctsucra   ); // add.LONG [Diagnosis]
     CTSU_LWORD_GET(CTSUCRBH    , CTSUCRBL    , g_ctsu_diag_reg.ctsucrb   );
     CTSU_LWORD_GET(CTSUCHACAH  , CTSUCHACAL  , g_ctsu_diag_reg.ctsuchaca );
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSU_LWORD_GET(CTSUCHACBH  , CTSUCHACBL  , g_ctsu_diag_reg.ctsuchacb );
+#endif
     CTSU_LWORD_GET(CTSUCHTRCAH , CTSUCHTRCAL , g_ctsu_diag_reg.ctsuchtrca);
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSU_LWORD_GET(CTSUCHTRCBH , CTSUCHTRCBL , g_ctsu_diag_reg.ctsuchtrcb);
+#endif
     CTSU_LWORD_GET(CTSUMCHH    , CTSUMCHL    , g_ctsu_diag_reg.ctsumch   );
     CTSU_LWORD_GET(CTSUDBGR1   , CTSUDBGR0   , g_ctsu_diag_reg.ctsucalib );
     CTSU_LWORD_GET(CTSUSUCLK1  , CTSUSUCLK0  , g_ctsu_diag_reg.ctsusuclka);
@@ -7013,21 +8141,7 @@ static void ctsu_diag_output_voltage_scan_start (ctsu_instance_ctrl_t * const p_
 {
     uint8_t k;
 
-    ADMK = 1U;   /* disable INTAD interrupt */
-    ADCEN = 1U;  /* supply AD clock */
-    ADM0 = 0x00; /* disable AD conversion and clear ADM0 register */
-    ADIF = 0U;   /* clear INTAD interrupt flag */
-    ///* The reset status of ADPC is analog input, so it's unnecessary to set. */
-    ADM0 = 0x00; /* AD_CONVERSION_CLOCK_64 | AD_TIME_MODE_NORMAL_1 | AD_OPERMODE_SELECT */
-    ADM1 = 0x20; /* AD_TRIGGER_SOFTWARE | AD_CONVMODE_ONESELECT */
-#if BSP_MCU_GROUP_RL78G22
-    ADM2 = 0x00; /* AD_POSITIVE_VDD | AD_NEGATIVE_VSS | AD_AREA_MODE_1 | AD_RESOLUTION_10BIT */
-#else
-    ADM2 = 0x02; /* AD_POSITIVE_VDD | AD_NEGATIVE_VSS | AD_AREA_MODE_1 | AD_RESOLUTION_12BIT */
-#endif
-    ADUL = 0xFF; /* AD_ADUL_VALUE */
-    ADLL = 0x00; /* AD_ADLL_VALUE */
-    ADS = 0x1E;  /* CH30 */
+    ctsu_adc_init();
 
     /* CTSU setting */
     CTSUCRAL |= CTSUCRA_PUMPON_Msk;
@@ -7161,11 +8275,24 @@ static void ctsu_diag_output_voltage_scan_start (ctsu_instance_ctrl_t * const p_
         ctsu_delay(1);
         ADIF = 0;
 #endif
-        ADCS = 1U;
+#if BSP_MCU_GROUP_RL78F25
+        ADIF = 0U;
+        ADMK = 0U;
+        ADWINR = 0x00U;
+        ADCSR |= 0x8000U;
+#else
+        ADCS = 1;
+#endif
 
         /* Wait for conversion to complete. */
 #if BSP_MCU_GROUP_RL78G22
         while (0 == ADIF)
+        {
+        }
+#elif BSP_MCU_GROUP_RL78F25
+        ADWINR = 0x00U;
+
+        while (0 != (ADCSR & 0x8000U))
         {
         }
 #else
@@ -7177,6 +8304,9 @@ static void ctsu_diag_output_voltage_scan_start (ctsu_instance_ctrl_t * const p_
         /* Read A/D data then scan normal end */
 #if BSP_MCU_GROUP_RL78G22
         g_ctsu_diag_info.output_voltage_cnt[k] = ((ADCR >> 4) & 0xFFF);
+#elif BSP_MCU_GROUP_RL78F25
+        ADWINR = 0x05U;
+        g_ctsu_diag_info.output_voltage_cnt[k] = ADDR29;
 #else
         g_ctsu_diag_info.output_voltage_cnt[k] = ADCR;
 #endif
@@ -7327,21 +8457,34 @@ static void ctsu_diag_over_current_scan_start (void)
     CTSUCRAL  &= ~CTSUCRA_MD1_Msk;
 
     CTSU_LWORD_GET(CTSUCHACAH, CTSUCHACAL, g_ctsu_diag_info.chaca);
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSU_LWORD_GET(CTSUCHACBH, CTSUCHACBL, g_ctsu_diag_info.chacb);
+#endif
     CTSUCHTRCAL = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHTRCBL = 0x0000U;
     CTSUCHTRCBH = 0x0000U;
+#endif
 
     CTSUCRAL &= ~CTSUCRA_CSW_Msk;
     CTSUCRAL &= ~CTSUCRA_PON_Msk;
 
     /* TSCAP discharge process */
- #if (CTSU_CFG_TSCAP_PORT == 0x0300)
-    P3_bit.no0 = 0;
-    PM3_bit.no0 = 0;
+ #if (CTSU_CFG_TSCAP_PORT == 0x0102)
+    P1_bit.no2     = 0;
+    POM1_bit.no2   = 0;
     ctsu_delay(10);
-    PM3_bit.no0 = 1;
+    POM1_bit.no2   = 1;
+    TSPMC1_bit.no2 = 1;
+ #endif
+ #if (CTSU_CFG_TSCAP_PORT == 0x0300)
+    P3_bit.no0    = 0;
+    PM3_bit.no0   = 0;
+    ctsu_delay(10);
+    PM3_bit.no0   = 1;
     PMCT3_bit.no0 = 1;
  #endif
 
@@ -7386,12 +8529,18 @@ static void ctsu_diag_load_resistance_scan_start (void)
 
     CTSUCHACAL  = 0x0001U;
     CTSUCHACAH  = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHACBL  = 0x0000U;
     CTSUCHACBH  = 0x0000U;
+#endif
     CTSUCHTRCAL = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHTRCBL = 0x0000U;
     CTSUCHTRCBH = 0x0000U;
+#endif
 
     CTSUDBGR0 |= CTSUCALIB_TSOC_Msk;
 
@@ -7442,6 +8591,7 @@ static void ctsu_diag_load_resistance_data_get (void)
         (uint16_t) ((((uint32_t) g_ctsu_diag_info.load_resistance[g_ctsu_diag_info.loop_count]) *
                      g_ctsu_diag_info.error_registance[3 - g_ctsu_diag_info.loop_count]) >> (CTSU_SHIFT_AMOUNT));
 
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
     ctsu_correction_calc_t calc;
     calc.snum  = CTSU_SNUM_RECOMMEND;
     calc.range = CTSU_RANGE_40UA;
@@ -7449,6 +8599,7 @@ static void ctsu_diag_load_resistance_data_get (void)
     ctsu_correction_calc(&g_ctsu_diag_info.load_resistance[g_ctsu_diag_info.loop_count],
                          g_ctsu_diag_info.load_resistance[g_ctsu_diag_info.loop_count],
                          &calc);
+#endif
     g_ctsu_diag_info.loop_count++;
 }
 
@@ -7496,12 +8647,18 @@ static void ctsu_diag_current_source_scan_start (void)
 
     CTSUCHACAL  = 0x0001U;
     CTSUCHACAH  = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHACBL  = 0x0000U;
     CTSUCHACBH  = 0x0000U;
+#endif
     CTSUCHTRCAL = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHTRCBL = 0x0000U;
     CTSUCHTRCBH = 0x0000U;
+#endif
 
     CTSUSO0 = CTSU_DIAG_DAC_INIT_0;
     CTSUSO1 = 0x0000U;
@@ -7519,7 +8676,7 @@ static void ctsu_diag_current_source_scan_start (void)
     CTSUCRAH  &= ~CTSUCRA_ATUNE2_Msk;
     CTSUCRAH  |= CTSUCRA_LOAD_Msk;
 
-    // DAC initial setting
+    /* DAC initial setting */
     temp_ctsucalib[0] = CTSUDBGR0;
     temp_ctsucalib[1] = CTSUDBGR1;
     CTSUDBGR0  = temp_ctsucalib[0];
@@ -7820,6 +8977,7 @@ static void ctsu_diag_current_source_data_get (void)
         (uint16_t) ((((uint32_t) g_ctsu_diag_info.current_source[g_ctsu_diag_info.loop_count]) *
                      g_ctsu_diag_info.error_registance[2]) >> (CTSU_SHIFT_AMOUNT));
 
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 0)
     ctsu_correction_calc_t calc;
     calc.snum  = CTSU_SNUM_RECOMMEND;
     calc.range = CTSU_RANGE_40UA;
@@ -7827,6 +8985,8 @@ static void ctsu_diag_current_source_data_get (void)
     ctsu_correction_calc(&g_ctsu_diag_info.current_source[g_ctsu_diag_info.loop_count],
                          g_ctsu_diag_info.current_source[g_ctsu_diag_info.loop_count],
                          &calc);
+#endif
+
     g_ctsu_diag_info.loop_count++;
 }
 
@@ -7878,6 +9038,11 @@ static void ctsu_diag_cco_gain_scan_start (void)
     CTSUDBGR1  = 0x0000U;
     CTSUDBGR1 &= ~CTSUCALIB_SUCARRY_Msk;
 
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+    /* Sensor coutner auto correction enabled */
+    CTSUOPTL &= 0xFFFEU;        /* CCOCFEN = 0 */
+#endif
+
     if (CTSU_DIAG_SENSCLK == g_ctsu_diag_info.state)
     {
         CTSUDBGR1 |= CTSUCALIB_CCOCALIB_Msk;
@@ -7892,12 +9057,18 @@ static void ctsu_diag_cco_gain_scan_start (void)
 
     CTSUCHACAL  = 0x0001U;
     CTSUCHACAH  = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHACBL  = 0x0000U;
     CTSUCHACBH  = 0x0000U;
+#endif
     CTSUCHTRCAL = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHTRCBL = 0x0000U;
     CTSUCHTRCBH = 0x0000U;
+#endif
 
     /* Setting time of measurement */
     g_ctsu_diag_info.ctsuwr.ctsuso = (CTSU_SNUM_RECOMMEND << 10);
@@ -7998,6 +9169,11 @@ static void ctsu_diag_cco_gain_data_get (void)
     }
 
     g_ctsu_diag_info.loop_count++;
+
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+    /* Sensor coutner auto correction enabled */
+    CTSUOPTL |= 0x0001U;        /* CCOCFEN = 1 */
+#endif
 }
 
 static fsp_err_t ctsu_diag_cco_gain_result (void)
@@ -8106,12 +9282,22 @@ static void ctsu_diag_clock_recovery_scan_start (void)
     CTSUMCHH  &= ~CTSUMCH_MCA3_Msk;
 
     CTSU_LWORD_GET(CTSUCHACAH, CTSUCHACAL, g_ctsu_diag_info.chaca);
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSU_LWORD_GET(CTSUCHACBH, CTSUCHACBL, g_ctsu_diag_info.chacb);
+#endif
     CTSUCHTRCAL = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
+#if BSP_MCU_GROUP_RL78F25
+#else
     CTSUCHTRCBL = 0x0000U;
     CTSUCHTRCBH = 0x0000U;
+#endif
 
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+    /* Sensor counter auto correction enabled */
+    CTSUOPTL &= 0xFFFEU;        /* CCOCFEN = 0 */
+#endif
     /* Setting time of measurement */
 
     g_ctsu_diag_info.ctsuwr.ctsuso = (uint32_t) ((0xfUL << 24) | (CTSU_SNUM_RECOMMEND << 10));
@@ -8124,6 +9310,11 @@ static void ctsu_diag_clock_recovery_data_get (void)
     {
         g_ctsu_diag_info.suclk_count_clk_recv[i] = (uint16_t) (g_ctsu_diag_info.ctsuscnt[i] >> 16);
     }
+
+#if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)
+    /* Sensor counter auto correction enabled */
+    CTSUOPTL |= 0x0001U;        /* CCOCFEN = 1 */
+#endif
 }
 
 static fsp_err_t ctsu_diag_clock_recovery_result (void)
