@@ -42,11 +42,11 @@
     <package>
         <type>RL78</type>
         <name>r_ctsu</name>
-        <version>2.20</version>
-        <zipsource>r_ctsu_v2.20.zip</zipsource>
+        <version>2.30</version>
+        <zipsource>r_ctsu_v2.30.zip</zipsource>
         <dependency>
             <module>r_bsp</module>
-            <version>1.70</version>
+            <version>1.91</version>
         </dependency>
         <application>CapTouch</application>
         <desc>Capacitive Sensing Unit driver.</desc>
