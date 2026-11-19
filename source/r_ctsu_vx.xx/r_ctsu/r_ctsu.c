@@ -1,20 +1,8 @@
-/***********************************************************************************************************************
-* DISCLAIMER
-* This software is supplied by Renesas Electronics Corporation and is only intended for use with Renesas products. No
-* other uses are authorized. This software is owned by Renesas Electronics Corporation and is protected under all
-* applicable laws, including copyright laws.
-* THIS SOFTWARE IS PROVIDED "AS IS" AND RENESAS MAKES NO WARRANTIES REGARDING
-* THIS SOFTWARE, WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. ALL SUCH WARRANTIES ARE EXPRESSLY DISCLAIMED. TO THE MAXIMUM
-* EXTENT PERMITTED NOT PROHIBITED BY LAW, NEITHER RENESAS ELECTRONICS CORPORATION NOR ANY OF ITS AFFILIATED COMPANIES
-* SHALL BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES FOR ANY REASON RELATED TO
-* THIS SOFTWARE, EVEN IF RENESAS OR ITS AFFILIATES HAVE BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
-* Renesas reserves the right, without notice, to make changes to this software and to discontinue the availability of
-* this software. By using this software, you agree to the additional terms and conditions found by accessing the
-* following link:
-* http://www.renesas.com/disclaimer
-* Copyright (C) 2024 Renesas Electronics Corporation. All rights reserved.
-************************************************************************************************************************/
+/*
+* Copyright (c) 2021 Renesas Electronics Corporation and/or its affiliates
+*
+* SPDX-License-Identifier: BSD-3-Clause
+*/
 
 /***********************************************************************************************************************
  * Includes
@@ -84,6 +72,14 @@
  #define CTSU_SUADJ_SSCNT_ADJ                (0x20) // The value of Adjusting SCADJx by SSCNT
  #define CTSU_MUTUAL_BUF_SIZE                (CTSU_CFG_NUM_SUMULTI * 2)
  #define CTSU_SUMULTI_BASE                   (0x3F) // SUCLK base value (32MHz)
+
+ #if (CTSU_CFG_DTC_SUPPORT_ENABLE == 1)
+  #if BSP_MCU_GROUP_RL78L23
+   #define CTSU_DTC_ACTIVATION_SOURCE_NUM    (56)   // DTC activation source number
+  #else
+   #define CTSU_DTC_ACTIVATION_SOURCE_NUM    (40)   // DTC activation source number
+  #endif
+ #endif
 
 /* Macro definitions for correction */
  #if (CTSU_CFG_LOW_VOLTAGE_MODE == 0)
@@ -938,7 +934,7 @@ typedef struct
   #if defined(__CCRL__)
 #if BSP_MCU_GROUP_RL78G22
 #pragma address dtc_vectortable = 0x0FFB00U
-uint8_t __near dtc_vectortable[40U];
+uint8_t __near dtc_vectortable[CTSU_DTC_ACTIVATION_SOURCE_NUM];
 
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
 #pragma address dtc_controldata_20 = 0x0FFBE0U
@@ -956,13 +952,13 @@ st_dtc_data __near dtc_controldata_22;
 
 #else
 #pragma address dtc_vectortable = 0x0FFD00U
-uint8_t __near dtc_vectortable[40U];
+uint8_t __near dtc_vectortable[CTSU_DTC_ACTIVATION_SOURCE_NUM];
 
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
 #pragma address dtc_controldata_21 = 0x0FFDE8U
 st_dtc_data __near dtc_controldata_21;
 #endif
-
+ 
 #if (CTSU_CFG_AUTO_JUDGE_ENABLE == 1)
  #if (CTSU_CFG_AUTO_MULTI_CLOCK_CORRECTION_ENABLE == 1)
 #pragma address dtc_controldata_10 = 0x0FFD90U
@@ -1012,7 +1008,7 @@ st_dtc_data __near dtc_controldata_23;
   #elif defined(__ICCRL78__)
 #if BSP_MCU_GROUP_RL78G22
 #pragma location=0x0FFB00U
-uint8_t __near dtc_vectortable[40U];
+uint8_t __near dtc_vectortable[CTSU_DTC_ACTIVATION_SOURCE_NUM];
 
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
 #pragma location=0x0FFBE0U
@@ -1030,7 +1026,7 @@ st_dtc_data __near dtc_controldata_22;
 
 #else
 #pragma location=0x0FFD00U
-uint8_t __near dtc_vectortable[40U];
+uint8_t __near dtc_vectortable[CTSU_DTC_ACTIVATION_SOURCE_NUM];
 
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
 #pragma location=0x0FFDE8U
@@ -1084,7 +1080,7 @@ st_dtc_data __near dtc_controldata_22;
 st_dtc_data __near dtc_controldata_23;
 #endif
   #elif defined(__llvm__)
-uint8_t dtc_vectortable[40U] __attribute__ ((section (".dtc_vectortable")));
+uint8_t dtc_vectortable[CTSU_DTC_ACTIVATION_SOURCE_NUM] __attribute__ ((section (".dtc_vectortable")));
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
 #if BSP_MCU_GROUP_RL78G22
 st_dtc_data dtc_controldata_20 __attribute__ ((section (".dtc_controldata_20")));
@@ -1121,7 +1117,7 @@ st_dtc_data dtc_controldata_23 __attribute__ ((section (".dtc_controldata_23")))
   #endif
  #else
 #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
-extern uint8_t __near     dtc_vectortable[40U];
+extern uint8_t __near     dtc_vectortable[CTSU_DTC_ACTIVATION_SOURCE_NUM];
 #if BSP_MCU_GROUP_RL78G22
 extern st_dtc_data_t __near dtc_controldata_20;
 extern st_dtc_data_t __near dtc_controldata_23;
@@ -1468,6 +1464,16 @@ fsp_err_t R_CTSU_Open (ctsu_ctrl_t * const p_ctrl, ctsu_cfg_t const * const p_cf
         ctsu_delay(10);
         PM3_bit.no0   = 1;
         PMCT3_bit.no0 = 1;
+#endif
+#if (CTSU_CFG_TSCAP_PORT == 0x0507)
+ #if BSP_MCU_GROUP_RL78L23
+        PFSEG2       &= 0xF7;       // PFSEG11 = 0 LCD Port function register
+ #endif
+        P5_bit.no7    = 0;
+        PM5_bit.no7   = 0;
+        ctsu_delay(10);
+        PM5_bit.no7   = 1;
+        PMCT5_bit.no7 = 1;
 #endif
 #if (CTSU_CFG_TSCAP_PORT == 0x0002)
         temp_tssel0  = TSSEL0;
@@ -3066,6 +3072,9 @@ fsp_err_t ctsu_transfer_open (ctsu_instance_ctrl_t * const p_instance_ctrl)
 #if BSP_MCU_GROUP_RL78G22
     /* Set DTCD20 */
     dtc_vectortable[38] = 0xE0U;
+#elif BSP_MCU_GROUP_RL78L23
+    /* Set DTCD21 */
+    dtc_vectortable[48] = 0xE8U;
 #else
     /* Set DTCD21 */
     dtc_vectortable[38] = 0xE8U;
@@ -3081,6 +3090,11 @@ fsp_err_t ctsu_transfer_open (ctsu_instance_ctrl_t * const p_instance_ctrl)
     dtc_vectortable[16] = 0xF0U;
     /* Set DTCD23 */
     dtc_vectortable[17] = 0xF8U;
+#elif BSP_MCU_GROUP_RL78L23
+    /* Set DTCD22 */
+    dtc_vectortable[43] = 0xF0U;
+    /* Set DTCD23 */
+    dtc_vectortable[44] = 0xF8U;
 #else
     /* Set DTCD22 */
     dtc_vectortable[33] = 0xF0U;
@@ -3140,6 +3154,8 @@ void ctsu_transfer_normal_ctsuwr (ctsu_instance_ctrl_t * const p_instance_ctrl)
 {
 #if (defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
     DTCEN2 &= 0x7F; //CTSUWR
+#elif BSP_MCU_GROUP_RL78L23
+    DTCEN5 &= 0xDF; //CTSUWR
 #else
     DTCEN4 &= 0xBF; //CTSUWR
 #endif
@@ -3267,6 +3283,8 @@ void ctsu_transfer_normal_ctsuwr (ctsu_instance_ctrl_t * const p_instance_ctrl)
 
 #if (defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
     DTCEN2 |= 0x80; //CTSUWR
+#elif BSP_MCU_GROUP_RL78L23
+    DTCEN5 |= 0x10; //CTSUWR
 #else
     DTCEN4 |= 0x40; //CTSUWR
 #endif
@@ -3279,6 +3297,8 @@ void ctsu_transfer_normal_ctsurd (ctsu_instance_ctrl_t * const p_instance_ctrl)
 {
 #if (defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
     DTCEN2 &= 0xBF; //CTSURD
+#elif BSP_MCU_GROUP_RL78L23
+    DTCEN5 &= 0xF7; //CTSURD
 #else
     DTCEN4 &= 0xDF; //CTSURD
 #endif
@@ -3401,6 +3421,8 @@ void ctsu_transfer_normal_ctsurd (ctsu_instance_ctrl_t * const p_instance_ctrl)
 
 #if (defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
     DTCEN2 |= 0x40; //CTSURD
+#elif BSP_MCU_GROUP_RL78L23
+    DTCEN5 |= 0x08; //CTSURD
 #else
     DTCEN4 |= 0x20; //CTSURD
 #endif
@@ -3707,8 +3729,11 @@ fsp_err_t ctsu_sms_transfer_configure (ctsu_instance_ctrl_t * const p_instance_c
     }
 #endif
 #endif
-
+#if BSP_MCU_GROUP_RL78L23
+    DTCEN6 |= 0x80;
+#else
     DTCEN4 |= 0x02;
+#endif
 
 #if BSP_MCU_GROUP_RL78G22
     /* DATA_SIZE_16BITS | REPEAT_INT_DISABLE | CHAIN_TRANSFER_DISABLE */
@@ -3731,9 +3756,11 @@ fsp_err_t ctsu_sms_transfer_configure (ctsu_instance_ctrl_t * const p_instance_c
     dtc_controldata_22.dtcct = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
     dtc_controldata_22.dtrld = (uint16_t) (p_instance_ctrl->num_elements * CTSU_CFG_NUM_SUMULTI);
 #endif
-
+#if BSP_MCU_GROUP_RL78L23
+    DTCEN5 |= 0x10; //CTSUWR
+#else
     DTCEN4 |= 0x40; //CTSUWR
-
+#endif
 #if BSP_MCU_GROUP_RL78G22
     dtc_controldata_22.dtccr = 0x13U;
     dtc_controldata_22.dtbls = 0x01;
@@ -4676,9 +4703,7 @@ void ctsu_correction_process (ctsu_instance_ctrl_t * const p_instance_ctrl)
  #if (CTSU_CFG_SMS_SUPPORT_ENABLE == 1)
         /* Store edge data for SMS correction calculation */       
         g_ctsu_correction_info.dac_value_edge[i][0] = g_ctsu_correction_info.dac_value[i][0];
-        g_ctsu_correction_info.coef_edge[i][0] = g_ctsu_correction_info.coef[i][0];
         g_ctsu_correction_info.dac_value_edge[i][1] = g_ctsu_correction_info.dac_value[i][11];
-        g_ctsu_correction_info.coef_edge[i][1] = g_ctsu_correction_info.coef[i][11];
  #endif
 
         // expand correction range
@@ -5019,7 +5044,7 @@ void ctsu_correction_data_get (ctsu_instance_ctrl_t * const p_instance_ctrl, uin
         for (j = 0; j < CTSU_CORRECTION_POINT_NUM; j++)
         {
             dac_value =
-                (uint16_t) ((uint32_t) (g_ctsu_correction_info.dac_value[CTSU_RANGE_160UA][j] * dac2vdc) >>
+                (uint16_t) (((uint32_t) g_ctsu_correction_info.dac_value[CTSU_RANGE_160UA][j] * dac2vdc) >>
                             CTSU_CORRECTION_DIV_PRECISION);
             ref_value = (CTSU_CORRECTION_STD_UNIT * (j + 1));
 
@@ -6242,7 +6267,11 @@ void ctsu_sms_work_init (ctsu_instance_ctrl_t * const p_instance_ctrl, uint16_t 
 #if (CTSU_CFG_NUM_SELF_ELEMENTS != 0)
     if (CTSU_MODE_SELF_MULTI_SCAN == p_instance_ctrl->md)
     {
+ #if BSP_MCU_GROUP_RL78L23
+        g_ctsu_sms_work[5].eb0 = dtc_vectortable[48U];              /* DTC Vector table for SMS */
+ #else
         g_ctsu_sms_work[5].eb0 = dtc_vectortable[38U];              /* DTC Vector table for SMS */
+ #endif
         g_ctsu_sms_work[5].eb1 = DTCBAR;                            /* DTC Base Address */
         g_ctsu_sms_work[5].eb2 = CTSU_SET_LOW(&g_ctsu_sms_transfer);/* Store the SMS Program Address pointer */
         g_ctsu_sms_work[5].eb3 = CTSU_SET_HI(&g_ctsu_sms_transfer); /* Store the SMS Program Address pointer */
@@ -6255,7 +6284,11 @@ void ctsu_sms_work_init (ctsu_instance_ctrl_t * const p_instance_ctrl, uint16_t 
 #if (CTSU_CFG_NUM_MUTUAL_ELEMENTS != 0)
     if (CTSU_MODE_MUTUAL_FULL_SCAN == p_instance_ctrl->md)
     {
+ #if BSP_MCU_GROUP_RL78L23
+        g_ctsu_sms_work[5].eb0 = dtc_vectortable[48U];              /* DTC Vector table for SMS */
+ #else
         g_ctsu_sms_work[5].eb0 = dtc_vectortable[38U];              /* DTC Vector table for SMS */
+ #endif
         g_ctsu_sms_work[5].eb1 = DTCBAR;                            /* DTC Base Address */
         g_ctsu_sms_work[5].eb2 = CTSU_SET_LOW(&g_ctsu_sms_transfer);/* Store the SMS Program Address pointer */
         g_ctsu_sms_work[5].eb3 = CTSU_SET_HI(&g_ctsu_sms_transfer); /* Store the SMS Program Address pointer */
@@ -6365,30 +6398,24 @@ void ctsu_sms_parameter_init (ctsu_instance_ctrl_t * const p_instance_ctrl,
 void ctsu_sms_correction_data_copy(ctsu_instance_ctrl_t * const p_instance_ctrl)
 {
     uint16_t i;
-    uint16_t coef;
     uint16_t dac_value;
-    uint32_t std_value;
 
     for (i = 0; i < CTSU_CORRECTION_POINT_NUM; i++)
     {
-        std_value = (uint32_t) (CTSU_CORRECTION_STD_UNIT * (i + 1)) << CTSU_CORRECTION_DIV_PRECISION;
         if (0 == i)
         {
-            coef = p_instance_ctrl->p_correction_info->coef_edge[p_instance_ctrl->range][0];
             dac_value = p_instance_ctrl->p_correction_info->dac_value_edge[p_instance_ctrl->range][0];
         }
         else if ((CTSU_CORRECTION_POINT_NUM - 1) == i)
         {
-            coef = p_instance_ctrl->p_correction_info->coef_edge[p_instance_ctrl->range][1];
             dac_value = p_instance_ctrl->p_correction_info->dac_value_edge[p_instance_ctrl->range][1];
         }
         else
         {
-            coef = p_instance_ctrl->p_correction_info->coef[p_instance_ctrl->range][i];
             dac_value = p_instance_ctrl->p_correction_info->dac_value[p_instance_ctrl->range][i];
         }
-        g_ctsu_sms_correction[i+1].scntsctl = (std_value / coef);
-        g_ctsu_sms_correction[i+1].scntscth = dac_value;
+        g_ctsu_sms_correction[i + 1].scntsctl = (uint16_t) (CTSU_CORRECTION_STD_UNIT * (i + 1));
+        g_ctsu_sms_correction[i + 1].scntscth = dac_value;
     }
 
     /* The first coefficient is 0,0 */
@@ -8560,9 +8587,9 @@ static void ctsu_diag_regi_store2 (void)
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchtrca , CTSUCHTRCAH , CTSUCHTRCAL);
 #else
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchaca  , CTSUCHACAH  , CTSUCHACAL );
-    CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchacb  , CTSUCHACBH  , CTSUCHACBL );
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchtrca , CTSUCHTRCAH , CTSUCHTRCAL);
-    CTSU_LWORD_SET(g_ctsu_diag_reg.ctsuchtrcb , CTSUCHTRCBH , CTSUCHTRCBL);
+    g_ctsu_diag_reg.ctsuchacb  = (uint32_t) CTSUCHACBL;
+    g_ctsu_diag_reg.ctsuchtrcb = (uint32_t) CTSUCHTRCBL;
 #endif
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsumch    , CTSUMCHH    , CTSUMCHL   );
     CTSU_LWORD_SET(g_ctsu_diag_reg.ctsucalib  , CTSUDBGR1   , CTSUDBGR0  );
@@ -8583,9 +8610,9 @@ static void ctsu_diag_regi_restore2 (void)
     CTSU_LWORD_GET(CTSUCHTRCAH , CTSUCHTRCAL , g_ctsu_diag_reg.ctsuchtrca);
 #else
     CTSU_LWORD_GET(CTSUCHACAH  , CTSUCHACAL  , g_ctsu_diag_reg.ctsuchaca );
-    CTSU_LWORD_GET(CTSUCHACBH  , CTSUCHACBL  , g_ctsu_diag_reg.ctsuchacb );
     CTSU_LWORD_GET(CTSUCHTRCAH , CTSUCHTRCAL , g_ctsu_diag_reg.ctsuchtrca);
-    CTSU_LWORD_GET(CTSUCHTRCBH , CTSUCHTRCBL , g_ctsu_diag_reg.ctsuchtrcb);
+    CTSUCHACAL  = (uint16_t) (g_ctsu_diag_reg.ctsuchacb & 0xFFFFU);
+    CTSUCHTRCAL = (uint16_t) (g_ctsu_diag_reg.ctsuchtrcb & 0xFFFFU);
 #endif
     CTSU_LWORD_GET(CTSUMCHH    , CTSUMCHL    , g_ctsu_diag_reg.ctsumch   );
     CTSU_LWORD_GET(CTSUDBGR1   , CTSUDBGR0   , g_ctsu_diag_reg.ctsucalib );
@@ -8918,7 +8945,7 @@ static void ctsu_diag_over_current_scan_start (void)
     CTSU_LWORD_GET(CTSUCHACAH, CTSUCHACAL, g_ctsu_diag_info.chaca);
 #else
     CTSU_LWORD_GET(CTSUCHACAH, CTSUCHACAL, g_ctsu_diag_info.chaca);
-    CTSU_LWORD_GET(CTSUCHACBH, CTSUCHACBL, g_ctsu_diag_info.chacb);
+    CTSUCHACBL = (uint16_t)(g_ctsu_diag_info.chacb & 0xFFFFU);
 #endif
 
     CTSUCHTRCAL = 0x0000U;
@@ -8929,7 +8956,6 @@ static void ctsu_diag_over_current_scan_start (void)
 #else
     CTSUCHTRCAH = 0x0000U;
     CTSUCHTRCBL = 0x0000U;
-    CTSUCHTRCBH = 0x0000U;
 #endif
 
     CTSUCRAL &= ~CTSUCRA_CSW_Msk;
@@ -8949,6 +8975,16 @@ static void ctsu_diag_over_current_scan_start (void)
     ctsu_delay(10);
     PM3_bit.no0   = 1;
     PMCT3_bit.no0 = 1;
+ #endif
+ #if (CTSU_CFG_TSCAP_PORT == 0x0507)
+  #if BSP_MCU_GROUP_RL78L23
+    PFSEG2       &= 0xF7;       // PFSEG11 = 0 LCD Port function register
+  #endif
+    P5_bit.no7    = 0;
+    PM5_bit.no7   = 0;
+    ctsu_delay(10);
+    PM5_bit.no7   = 1;
+    PMCT5_bit.no7 = 1;
  #endif
 
     CTSUCRAL |= CTSUCRA_CSW_Msk;
@@ -9000,10 +9036,8 @@ static void ctsu_diag_load_resistance_scan_start (void)
 #else
     CTSUCHACAH  = 0x0000U;
     CTSUCHACBL  = 0x0000U;
-    CTSUCHACBH  = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
     CTSUCHTRCBL = 0x0000U;
-    CTSUCHTRCBH = 0x0000U;
 #endif
 
     CTSUDBGR0 |= CTSUCALIB_TSOC_Msk;
@@ -9119,10 +9153,8 @@ static void ctsu_diag_current_source_scan_start (void)
 #else
     CTSUCHACAH  = 0x0000U;
     CTSUCHACBL  = 0x0000U;
-    CTSUCHACBH  = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
     CTSUCHTRCBL = 0x0000U;
-    CTSUCHTRCBH = 0x0000U;
 #endif
 
     CTSUSO0 = CTSU_DIAG_DAC_INIT_0;
@@ -9530,10 +9562,8 @@ static void ctsu_diag_cco_gain_scan_start (void)
 #else
     CTSUCHACAH  = 0x0000U;
     CTSUCHACBL  = 0x0000U;
-    CTSUCHACBH  = 0x0000U;
     CTSUCHTRCAH = 0x0000U;
     CTSUCHTRCBL = 0x0000U;
-    CTSUCHTRCBH = 0x0000U;
 #endif
 
     /* Setting time of measurement */
@@ -9753,7 +9783,7 @@ static void ctsu_diag_clock_recovery_scan_start (void)
     CTSU_LWORD_GET(CTSUCHACAH, CTSUCHACAL, g_ctsu_diag_info.chaca);
 #else
     CTSU_LWORD_GET(CTSUCHACAH, CTSUCHACAL, g_ctsu_diag_info.chaca);
-    CTSU_LWORD_GET(CTSUCHACBH, CTSUCHACBL, g_ctsu_diag_info.chacb);
+    CTSUCHACBL = (uint16_t)(g_ctsu_diag_info.chacb & 0xFFFFU);
 #endif
 
     CTSUCHTRCAL = 0x0000U;
@@ -9764,7 +9794,6 @@ static void ctsu_diag_clock_recovery_scan_start (void)
 #else
     CTSUCHTRCAH = 0x0000U;
     CTSUCHTRCBL = 0x0000U;
-    CTSUCHTRCBH = 0x0000U;
 #endif
 
 #if (CTSU_CFG_AUTO_CORRECTION_ENABLE == 1)

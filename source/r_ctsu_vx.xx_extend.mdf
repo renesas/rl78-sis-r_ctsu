@@ -187,6 +187,7 @@ It is convenient to set 0 if DTC is used only by the CTSU driver. DTC settings a
             <constraint display="This feature is not available on RL78/G16" actionOnFail="disable">("${Device.group}" != "RL78G16")</constraint>
             <constraint display="This feature is not available on RL78/G22" actionOnFail="disable">("${Device.group}" != "RL78G22")</constraint>
             <constraint display="This feature is not available on RL78/G23" actionOnFail="disable">("${Device.group}" != "RL78G23")</constraint>
+            <constraint display="This feature is not available on RL78/L23" actionOnFail="disable">("${Device.group}" != "RL78L23")</constraint>
             <description>Select enable / disable of auto judgement code.
             -Disable:Disable use the code for auto judgement.
             -Enable:Enable use the code for auto judgement.

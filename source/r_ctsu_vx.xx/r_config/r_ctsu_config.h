@@ -1,22 +1,8 @@
-/* Generated configuration header file - do not edit */
-/***********************************************************************************************************************
- * DISCLAIMER
- * This software is supplied by Renesas Electronics Corporation and is only intended for use with Renesas products. No
- * other uses are authorized. This software is owned by Renesas Electronics Corporation and is protected under all
- * applicable laws, including copyright laws.
- * THIS SOFTWARE IS PROVIDED "AS IS" AND RENESAS MAKES NO WARRANTIES REGARDING
- * THIS SOFTWARE, WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. ALL SUCH WARRANTIES ARE EXPRESSLY DISCLAIMED. TO THE MAXIMUM
- * EXTENT PERMITTED NOT PROHIBITED BY LAW, NEITHER RENESAS ELECTRONICS CORPORATION NOR ANY OF ITS AFFILIATED COMPANIES
- * SHALL BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES FOR ANY REASON RELATED TO THIS
- * SOFTWARE, EVEN IF RENESAS OR ITS AFFILIATES HAVE BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
- * Renesas reserves the right, without notice, to make changes to this software and to discontinue the availability of
- * this software. By using this software, you agree to the additional terms and conditions found by accessing the
- * following link:
- * http://www.renesas.com/disclaimer
- *
- * Copyright (C) 2024 Renesas Electronics Corporation. All rights reserved.
- ***********************************************************************************************************************/
+/*
+* Copyright (c) 2021 Renesas Electronics Corporation and/or its affiliates
+*
+* SPDX-License-Identifier: BSD-3-Clause
+*/
 
 #ifndef CTSU_CONFIG_HEADER_FILE
 #define CTSU_CONFIG_HEADER_FILE
@@ -121,14 +107,20 @@
  #define CTSU_CFG_TSCAP_PORT                 (0x0300)
  #elif (defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
  #define CTSU_CFG_TSCAP_PORT                 (0x0102)
+ #elif (defined(BSP_MCU_GROUP_RL78L23))
+ #define CTSU_CFG_TSCAP_PORT                 (0x0507)
  #else
  #define CTSU_CFG_TSCAP_PORT                 (0x0002)
  #define CTSU_CFG_DIAG_DAC_TS                (0)
  #endif
 #define CTSU_CFG_VCC_MV                     (5000)
-#define CTSU_CFG_NUM_SUMULTI                (3)
+ #if (defined(BSP_MCU_GROUP_RL78G16))
+ #define CTSU_CFG_NUM_SUMULTI                (1)
+ #else
+ #define CTSU_CFG_NUM_SUMULTI                (3)
+ #endif
 
- #if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23))
+ #if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23) || defined(BSP_MCU_GROUP_RL78L23))
  #define CTSU_CFG_SUMULTI0                   (0x2F)
  #define CTSU_CFG_SUMULTI1                   (0x28)
  #define CTSU_CFG_SUMULTI2                   (0x36)
@@ -147,7 +139,7 @@
 #endif
 
  #if (CTSU_CFG_DIAG_SUPPORT_ENABLE == 1)
-#if  (defined(BSP_MCU_GROUP_RL78G16))
+#if (defined(BSP_MCU_GROUP_RL78G16))
 #if (CTSU_CFG_LOW_VOLTAGE_MODE == 0)
 #define CTSU_CFG_DIAG_CCO_HIGH_MAX                (54888)
 #define CTSU_CFG_DIAG_CCO_HIGH_MIN                (29062)
@@ -203,9 +195,7 @@
 #define CTSU_CFG_DIAG_DAC8_TYP                    (1152)
 #define CTSU_CFG_DIAG_DAC_HDIFF                   (114)
 #define CTSU_CFG_DIAG_DAC_LDIFF                   (91)
-#endif
-
-#if (defined(BSP_MCU_GROUP_RL78G22) || defined(BSP_MCU_GROUP_RL78G23) || defined(BSP_MCU_GROUP_RL78F25) || defined(BSP_MCU_GROUP_RL78F22))
+#else
   #define CTSU_DIAG_TSCAP_RANGE_LOW                (1050)
   #define CTSU_DIAG_TSCAP_RANGE_HIGH               (1419)
 
